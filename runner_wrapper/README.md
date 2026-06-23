@@ -1,22 +1,17 @@
 # Runner Wrapper
 
-`runner_wrapper/` is a copyable HTTP wrapper for turning a model repo into a
-SceneGenDeployBench runner image. In this repo it is a test runner. In a model
-repo, keep `server.py` and replace the test logic in `adapter.py`.
+`runner_wrapper/` is a copyable HTTP wrapper for turning a model repo into a SceneGenDeployBench runner image. In this repo it is a test runner. In a model repo, keep `server.py` and replace the test logic in `adapter.py`.
 
-For AI agents adapting a copied folder, read `AGENTS.md`; it is the
-self-contained contract note.
+For AI agents adapting a copied folder, read `AGENTS.md`; it is the self-contained contract note.
 
 ## What To Build
 
 One image implements one role:
 
 - `generator`: consumes dataset files and returns reusable generated artifacts.
-- `evaluator`: consumes dataset files and/or generated artifacts, then returns
-  scalar metrics and optional report/preview/log artifacts.
+- `evaluator`: consumes dataset files and/or generated artifacts, then returns scalar metrics and optional report/preview/log artifacts.
 
-Do not build a hybrid runner. The catalog `kind` must be `generator` or
-`evaluator`; the orchestrator injects matching `RUNNER_TYPE` during real runs.
+Do not build a hybrid runner. The catalog `kind` must be `generator` or `evaluator`; the orchestrator injects matching `RUNNER_TYPE` during real runs.
 
 ## Files
 
@@ -66,9 +61,7 @@ States:
 
 - `starting`, `idle`, `running`, `finished`, `failed`, `shutting_down`
 
-`POST /run-job` accepts or rejects a job immediately. If accepted, work happens
-in the background. Poll `GET /status` until `state` is `finished` or `failed`;
-then read `result`.
+`POST /run-job` accepts or rejects a job immediately. If accepted, work happens in the background. Poll `GET /status` until `state` is `finished` or `failed`; then read `result`.
 
 ## Adapter Contract
 
@@ -135,8 +128,7 @@ gpu.energy_joules
 gpu.compute_time_ms
 ```
 
-`measurements.py` provides `ResourceMonitor` for the standard container metrics.
-Omit metrics that cannot be measured; do not return guessed zeroes.
+`measurements.py` provides `ResourceMonitor` for the standard container metrics. Omit metrics that cannot be measured; do not return guessed zeroes.
 
 ## Data Type Alignment
 
@@ -147,13 +139,9 @@ catalog inputs.required -> config.required_data_types -> sample.data keys
 generator artifact data_type -> future evaluator sample.data key
 ```
 
-Generator outputs are reusable only when `artifact_type` is `model_output`,
-`generated_output`, or `output`. Set `data_type` to the semantic key a
-downstream evaluator will require, for example `scene`, `mesh`, `image`,
-`depth`, or `point_cloud`.
+Generator outputs are reusable only when `artifact_type` is `model_output`, `generated_output`, or `output`. Set `data_type` to the semantic key a downstream evaluator will require, for example `scene`, `mesh`, `image`, `depth`, or `point_cloud`.
 
-The orchestrator records only artifacts returned in `result.artifacts`; it does
-not scan the output directory.
+The orchestrator records only artifacts returned in `result.artifacts`; it does not scan the output directory.
 
 ## Build And Smoke
 
@@ -187,9 +175,7 @@ docker run --rm -p 58090:58090 \
   my-model-runner
 ```
 
-Submit `runner_wrapper/examples/generator_job_request.json` or
-`runner_wrapper/examples/evaluator_job_request.json` to `POST /run-job`, then
-poll `GET /status`.
+Submit `runner_wrapper/examples/generator_job_request.json` or `runner_wrapper/examples/evaluator_job_request.json` to `POST /run-job`, then poll `GET /status`.
 
 ## Runner Catalog
 
@@ -206,14 +192,9 @@ runner_wrapper/examples/generator_runner_catalog.example.yaml
 runner_wrapper/examples/evaluator_runner_catalog.example.yaml
 ```
 
-Set `runner`, `version`, `kind`, `inputs`, `launcher.image`, and
-`launcher.endpoint.port`. Add `launcher.env` for runner-specific runtime config,
-such as model mode, checkpoint selector, thresholds, backend flags,
-credentials, API endpoints, cache locations, or weight/config paths. Copy the
-finished YAML into the orchestrator repo's `config/runners/` directory.
+Set `runner`, `version`, `kind`, `inputs`, `launcher.image`, and `launcher.endpoint.port`. Add `launcher.env` for runner-specific runtime config, such as model mode, checkpoint selector, thresholds, backend flags, credentials, API endpoints, cache locations, or weight/config paths. Copy the finished YAML into the orchestrator repo's `config/runners/` directory.
 
-If an env value is a path, make sure that path exists inside the image or
-through deployment-specific setup.
+If an env value is a path, make sure that path exists inside the image or through deployment-specific setup.
 
 ## GitHub Actions
 
@@ -225,7 +206,7 @@ cp runner_wrapper/examples/github-workflows/build-runner-image.yaml \
   .github/workflows/runner-image.yaml
 ```
 
-The workflow derives the image name from the repository name. The target repo should be named `SceneGenDepolyBench-<model>`. It builds from repo root with `runner_wrapper/Dockerfile`, pushes to GHCR on branch/tag pushes, and builds pull requests without pushing.
+The workflow derives the image name from the repository name. The target repo should be named `SceneGenDeployBench-<model>`. It builds from repo root with `runner_wrapper/Dockerfile`, pushes to GHCR on branch/tag pushes, and builds pull requests without pushing.
 
 ## Environment
 
@@ -238,5 +219,4 @@ The workflow derives the image name from the repository name. The target repo sh
 - `RUNNER_LOG_LEVEL=INFO`
 - `RUNNER_IDLE_TIMEOUT_SECONDS=900`
 
-`RUNNER_ADAPTER` is already set by the image default when `adapter.py` exposes
-`run_job`; override it only for a different callable path.
+`RUNNER_ADAPTER` is already set by the image default when `adapter.py` exposes `run_job`; override it only for a different callable path.

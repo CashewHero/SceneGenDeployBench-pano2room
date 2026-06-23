@@ -1,24 +1,21 @@
 # Runner Adaptation
 
-This folder is meant to be copied into a model repository. Assume no other
-SceneGenDeployBench files are available. Your task is to wrap the existing
-model as one HTTP runner image that the orchestrator can launch.
+This folder is meant to be copied into a model repository. Assume no other SceneGenDeployBench files are available. Your task is to wrap the existing model as one HTTP runner image that the orchestrator can launch.
 
-Wrap the model repo; do not redesign it. Prefer changes in `runner_wrapper/`,
-Docker/package wiring, config, and small launch scripts. Patch original model
-source only when unavoidable, and document why.
+Wrap the model repo; do not redesign it. Prefer changes in `runner_wrapper/`, Docker/package wiring, config, and small launch scripts. Patch original model source only when unavoidable, and document why.
 
 ## Choose One Role
 
 Build exactly one role per image:
 
 - `generator`: consumes dataset inputs and returns reusable generated outputs.
-- `evaluator`: consumes dataset inputs and/or generated outputs, then returns
-  scalar metrics plus optional reports, previews, or logs.
+- `evaluator`: consumes dataset inputs and/or generated outputs, then returns scalar metrics plus optional reports, previews, or logs.
 
-Set the catalog `kind` to the chosen role. In orchestrated runs, `RUNNER_TYPE`
-is injected from that catalog value. For manual runs, set `RUNNER_TYPE` to the
-same value. Do not implement a hybrid runner.
+Set the catalog `kind` to the chosen role. In orchestrated runs, `RUNNER_TYPE` is injected from that catalog value. For manual runs, set `RUNNER_TYPE` to the same value. Do not implement a hybrid runner.
+
+## Repository And Image Naming
+
+Before editing, check that the target repo name starts with `SceneGenDeployBench-`. If it does not, stop and notify the user. The image name is derived from the repo name for GHCR.
 
 ## Repository And Image Naming
 
@@ -41,9 +38,7 @@ Keep `runner_wrapper/server.py` stable unless the HTTP contract changes.
 
 ## Orchestrator Contract
 
-The orchestrator owns scheduling, retries, persistence, and database writes.
-The runner executes one request at a time and reports the terminal result
-through `GET /status`.
+The orchestrator owns scheduling, retries, persistence, and database writes. The runner executes one request at a time and reports the terminal result through `GET /status`.
 
 HTTP endpoints exposed by `server.py`:
 
@@ -55,9 +50,7 @@ Runner states:
 
 - `starting`, `idle`, `running`, `finished`, `failed`, `shutting_down`
 
-`POST /run-job` accepts a JSON request, starts work in a background thread, and
-returns `accepted: true` when the runner is available. Poll `GET /status` until
-`state` is `finished` or `failed`; then read `result`.
+`POST /run-job` accepts a JSON request, starts work in a background thread, and returns `accepted: true` when the runner is available. Poll `GET /status` until `state` is `finished` or `failed`; then read `result`.
 
 ## Adapter Contract
 
@@ -120,14 +113,10 @@ Names must line up across the catalog, request, and artifacts:
 
 1. Catalog `inputs.required` becomes `config.required_data_types`.
 2. Each required input must be present as a key in `sample.data`.
-3. A generator's reusable artifact `data_type` becomes a future evaluator's
-   `sample.data` key.
+3. A generator's reusable artifact `data_type` becomes a future evaluator's `sample.data` key.
 4. An evaluator catalog must require the same `data_type` keys it expects.
 
-Choose semantic data types from the model and benchmark domain, not from local
-variable names. Good examples: `image`, `depth`, `camera_pose`, `scene`,
-`mesh`, `point_cloud`, `caption`. Keep them stable across versions unless the
-contract intentionally changes.
+Choose semantic data types from the model and benchmark domain, not from local variable names. Good examples: `image`, `depth`, `camera_pose`, `scene`, `mesh`, `point_cloud`, `caption`. Keep them stable across versions unless the contract intentionally changes.
 
 ## Outputs
 
@@ -145,9 +134,7 @@ Reusable output artifact fields:
 - `format`: file format when known, for example `glb`, `obj`, `png`, `json`
 - `metadata`: optional small JSON object
 
-Evaluator scores belong in `metrics`; reports, previews, summaries, and logs
-belong in `artifacts` with non-reusable types such as `report`, `preview`,
-`diagnostic`, `metric_summary`, or `job_log`.
+Evaluator scores belong in `metrics`; reports, previews, summaries, and logs belong in `artifacts` with non-reusable types such as `report`, `preview`, `diagnostic`, `metric_summary`, or `job_log`.
 
 Metric fields:
 
@@ -158,13 +145,11 @@ Metric fields:
 - `unit`: optional unit or scale
 - `source`: `runner`, `model`, or `evaluator`
 
-The orchestrator records only artifacts and metrics returned in the result. It
-does not scan the output directory.
+The orchestrator records only artifacts and metrics returned in the result. It does not scan the output directory.
 
 ## Measurements
 
-Use `ResourceMonitor` from `runner_wrapper.measurements` around the job body
-and report these standard per-job metrics when available:
+Use `ResourceMonitor` from `runner_wrapper.measurements` around the job body and report these standard per-job metrics when available:
 
 ```text
 resources.cpu_time_ms
@@ -189,13 +174,11 @@ gpu.energy_joules
 gpu.compute_time_ms
 ```
 
-Omit metrics that cannot be measured. Do not return guessed zeroes. Keep
-model-specific quality/evaluator scores separate from these resource metrics.
+Omit metrics that cannot be measured. Do not return guessed zeroes. Keep model-specific quality/evaluator scores separate from these resource metrics.
 
 ## Catalog
 
-Create one catalog YAML under `runner_wrapper/config/runners/` using the
-matching example as a starting point:
+Create one catalog YAML under `runner_wrapper/config/runners/` using the matching example as a starting point:
 
 ```bash
 mkdir -p runner_wrapper/config/runners
@@ -214,16 +197,9 @@ Set:
 - `inputs.required` and `inputs.optional`: semantic data type keys
 - `launcher.image`: image tag the orchestrator can pull or run
 - `launcher.endpoint.port`: container port used by `RUNNER_PORT`
-- `launcher.env`: optional runner-specific runtime config, such as model mode,
-  checkpoint selector, thresholds, backend flags, credentials, API endpoints,
-  cache locations, or weight/config paths
+- `launcher.env`: optional runner-specific runtime config, such as model mode, checkpoint selector, thresholds, backend flags, credentials, API endpoints, cache locations, or weight/config paths
 
-The orchestrator injects `RUNNER_NAME`, `RUNNER_TYPE`, `RUNNER_VERSION`,
-`RUNNER_CONTRACT_VERSION`, and `RUNNER_PORT` from the catalog.
-`RUNNER_ADAPTER` defaults to `runner_wrapper.adapter:run_job`; set it in
-`launcher.env` only when the callable lives somewhere else.
-If an env value is a path, make sure that path exists in the image, is created
-or downloaded by startup code, or is provided by deployment-specific mounting.
+The orchestrator injects `RUNNER_NAME`, `RUNNER_TYPE`, `RUNNER_VERSION`, `RUNNER_CONTRACT_VERSION`, and `RUNNER_PORT` from the catalog. `RUNNER_ADAPTER` defaults to `runner_wrapper.adapter:run_job`; set it in `launcher.env` only when the callable lives somewhere else. If an env value is a path, make sure that path exists in the image, is created or downloaded by startup code, or is provided by deployment-specific mounting.
 
 ## Build And Smoke
 
@@ -232,13 +208,12 @@ Adaptation workflow:
 1. Inspect the model entry points, dependencies, weights, inputs, and outputs.
 2. Choose exactly one role and the stable input/output data type names.
 3. Replace the test adapter logic in `runner_wrapper/adapter.py`.
-4. Update `runner_wrapper/Dockerfile` for dependencies, package install, model
-   assets, and weight handling.
-5. Add `.dockerignore` entries for datasets, outputs, caches, and local weights
-   that should not be baked into the image.
+4. Update `runner_wrapper/Dockerfile` for dependencies, package install, model assets, and weight handling.
+5. Add `.dockerignore` entries for datasets, outputs, caches, and local weights that should not be baked into the image.
 6. Create one catalog YAML in `runner_wrapper/config/runners/`.
-7. Install `.github/workflows/runner-image.yaml` from the template.
-8. Build and smoke test.
+7. Add a short note at the top of the target repo README saying the repo was ported into a runner for [SceneGenDeployBench](https://github.com/CashewHero/SceneGenDeployBench).
+8. Install `.github/workflows/runner-image.yaml` from the template.
+9. Build and smoke test.
 
 Build from the model repo root:
 
@@ -296,5 +271,4 @@ cp runner_wrapper/examples/github-workflows/build-runner-image.yaml \
 - standard resource measurements are reported when available
 - artifact paths are relative to `runtime.output_dir`
 - `.github/workflows/runner-image.yaml` builds the image
-- `runner_wrapper/config/runners/<runner>.yaml` is ready to copy into the
-  orchestrator repo's `config/runners/` directory
+- `runner_wrapper/config/runners/<runner>.yaml` is ready to copy into the orchestrator repo's `config/runners/` directory

@@ -37,7 +37,7 @@ jobs:
           image="${repo,,}"
           image="$(printf '%s' "${image}" | sed 's/[^a-z0-9_.-]/-/g')"
           if [[ "${image}" != scenegendeploybench-* ]]; then
-            echo "::error::Repository name must start with scenegendeploybench- so the image is published with that prefix. Current repository: ${repo}"
+            echo "::error::Repository name must start with SceneGenDeployBench-; the GHCR image name will be lowercased. Current repository: ${repo}"
             exit 1
           fi
           echo "owner=${owner}" >> "${GITHUB_OUTPUT}"
