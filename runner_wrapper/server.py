@@ -58,6 +58,7 @@ class RunnerSettings:
     runner_version: str
     contract_version: int
     idle_timeout_seconds: int
+    startup_timeout_seconds: float
     adapter_target: str
 
     @classmethod
@@ -69,6 +70,7 @@ class RunnerSettings:
             runner_version=os.getenv("RUNNER_VERSION", "0.1.0"),
             contract_version=int(os.getenv("RUNNER_CONTRACT_VERSION", "1")),
             idle_timeout_seconds=int(os.getenv("RUNNER_IDLE_TIMEOUT_SECONDS", "900")),
+            startup_timeout_seconds=float(os.getenv("RUNNER_STARTUP_TIMEOUT_SECONDS", "60")),
             adapter_target=os.getenv("RUNNER_ADAPTER", "runner_wrapper.adapter:run_job"),
         )
 
@@ -330,9 +332,31 @@ def idle_shutdown_loop(server: RunnerHTTPServer) -> None:
     server.shutdown()
 
 
+def start_startup_timeout_watchdog(settings: RunnerSettings) -> threading.Event:
+    ready_event = threading.Event()
+    if settings.startup_timeout_seconds <= 0:
+        raise ValueError("RUNNER_STARTUP_TIMEOUT_SECONDS must be greater than 0")
+
+    def watch_startup() -> None:
+        if ready_event.wait(settings.startup_timeout_seconds):
+            return
+        logger.error(
+            event_message(
+                "runner_startup_timeout",
+                timeout_seconds=settings.startup_timeout_seconds,
+                adapter_target=settings.adapter_target,
+            )
+        )
+        os._exit(124)
+
+    threading.Thread(target=watch_startup, daemon=True).start()
+    return ready_event
+
+
 def main() -> None:
     configure_logging()
     settings = RunnerSettings.from_env()
+    startup_ready = start_startup_timeout_watchdog(settings)
     run_job_handler = load_run_job_handler(settings.adapter_target)
     logger.info(
         event_message(
@@ -341,6 +365,7 @@ def main() -> None:
             runner_name=settings.runner_name,
             runner_version=settings.runner_version,
             idle_timeout_seconds=settings.idle_timeout_seconds,
+            startup_timeout_seconds=settings.startup_timeout_seconds,
             adapter_target=settings.adapter_target,
         )
     )
@@ -348,6 +373,7 @@ def main() -> None:
     runner = Runner(settings=settings, run_job_handler=run_job_handler)
     server = RunnerHTTPServer(("0.0.0.0", settings.port), RunnerHandler, runner)
     runner.mark_ready()
+    startup_ready.set()
 
     shutdown_thread = threading.Thread(target=idle_shutdown_loop, args=(server,), daemon=True)
     shutdown_thread.start()

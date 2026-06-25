@@ -14,9 +14,12 @@ runners:
         - mesh
         - image
         - depth
+        - camera_trajectory
     scheduling:
       max_batch_size: 50
       max_attempts: 3
+      job_timeout_minutes: 30
+      startup_timeout_minutes: 5
     launcher:
       driver: docker
       compat_version: 1

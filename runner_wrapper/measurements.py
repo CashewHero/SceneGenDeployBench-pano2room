@@ -169,7 +169,7 @@ class ResourceMonitor:
     def __init__(
         self,
         *,
-        sample_data: dict[str, str],
+        sample_data: dict[str, Any],
         output_dir: Path,
         sample_interval_seconds: float = 0.5,
     ) -> None:
@@ -194,7 +194,11 @@ class ResourceMonitor:
         self._wall_start = time.time()
         self._cpu_start = _cpu_usage_usec()
         self._io_start = _io_stats()
-        self._input_total_bytes = sum(_file_tree_size(Path(path)) for path in self.sample_data.values())
+        self._input_total_bytes = sum(
+            _file_tree_size(Path(path))
+            for path in self.sample_data.values()
+            if isinstance(path, str)
+        )
         self._gpu_total_memory_bytes = _gpu_device_memory_total_bytes()
         self._sample_once()
         self._thread = threading.Thread(target=self._sample_loop, daemon=True)

@@ -23,6 +23,7 @@ runner_wrapper/
   server.py                         # stable HTTP runner API
   Dockerfile                        # builds from repo root
   localtest.sh                      # local build/run/smoke helper
+  docs/                             # runner-facing input notes
   examples/
 ```
 
@@ -73,7 +74,10 @@ def run_job(job_request: dict) -> dict: ...
 
 Use:
 
-- `sample.data`: semantic data type to input path, such as `image` or `scene`
+- `sample.data`: semantic data type to input path, except `camera_pose`; `camera_trajectory` remains a path to a YAML/JSON file
+- `sample.metadata`: inherited dataset/subset/sample metadata
+- [Camera pose inputs](docs/camera_pose.md): how runners should read `camera_pose`
+- [Camera trajectory inputs](docs/camera_trajectory.md): how runners should read `camera_trajectory`
 - `runtime.output_dir`: durable output root
 - `runtime.temp_dir`: scratch root
 - `runtime.device`: requested device, such as `cuda:0`
@@ -218,5 +222,6 @@ The workflow derives the image name from the repository name. The target repo sh
 - `RUNNER_ADAPTER=runner_wrapper.adapter:run_job`
 - `RUNNER_LOG_LEVEL=INFO`
 - `RUNNER_IDLE_TIMEOUT_SECONDS=900`
+- `RUNNER_STARTUP_TIMEOUT_SECONDS=60`
 
-`RUNNER_ADAPTER` is already set by the image default when `adapter.py` exposes `run_job`; override it only for a different callable path.
+`RUNNER_ADAPTER` is already set by the image default when `adapter.py` exposes `run_job`; override it only for a different callable path. `RUNNER_STARTUP_TIMEOUT_SECONDS` is normally injected from `scheduling.startup_timeout_minutes`; if startup has not reached ready by then, the wrapper logs `runner_startup_timeout` and exits.

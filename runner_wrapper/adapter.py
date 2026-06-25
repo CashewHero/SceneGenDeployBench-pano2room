@@ -54,10 +54,21 @@ def utc_time(timestamp: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp))
 
 
-def _normalize_sample_data(sample: dict[str, Any]) -> dict[str, str]:
+def _normalize_sample_data(sample: dict[str, Any]) -> dict[str, Any]:
     sample_data = sample.get("data")
-    if not isinstance(sample_data, dict) or not sample_data:
-        raise ValueError("sample.data must contain an image path")
+    if isinstance(sample_data, dict) and sample_data:
+        normalized: dict[str, Any] = {}
+        for data_type, raw_value in sample_data.items():
+            data_key = str(data_type).strip()
+            if not data_key:
+                raise ValueError("sample data type names must be non-empty")
+            if data_key == "camera_pose" and isinstance(raw_value, dict):
+                normalized[data_key] = dict(raw_value)
+                continue
+            if not isinstance(raw_value, str) or not raw_value.strip():
+                raise ValueError(f"sample data path for {data_key} must be a non-empty string")
+            normalized[data_key] = raw_value.strip()
+        return normalized
 
     normalized: dict[str, str] = {}
     for data_type, raw_path in sample_data.items():
@@ -70,7 +81,11 @@ def _normalize_sample_data(sample: dict[str, Any]) -> dict[str, str]:
     return normalized
 
 
-def _validate_required_data_types(sample_data: dict[str, str], required_data_types: list[str]) -> None:
+def _validate_required_data_types(
+    sample_data: dict[str, Any],
+    required_data_types: list[str],
+    job_id: str,
+) -> None:
     missing_data_types = [data_type for data_type in required_data_types if data_type not in sample_data]
     if missing_data_types:
         raise ValueError(f"sample missing required data types: {', '.join(missing_data_types)}")
@@ -145,13 +160,77 @@ def _download_with_gdown(url: str, output_path: Path) -> None:
         raise RuntimeError(f"gdown failed to download {url} to {output_path}")
 
 
-def _ensure_pano2room_weights() -> None:
-    _copy_lama_config_if_needed(Path(os.environ["PANO2ROOM_LAMA_CONFIG_PATH"]))
+def _copy_inputs(sample_data: dict[str, Any], output_root: Path, *, model_outputs: bool) -> list[dict[str, Any]]:
+    output_dir = output_root / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    missing_downloads = [
-        env_key
-        for env_key in PANO2ROOM_WEIGHT_DOWNLOADS
-        if not Path(os.environ[env_key]).exists()
+    artifacts: list[dict[str, Any]] = []
+    for index, (data_type, raw_path) in enumerate(sample_data.items()):
+        if not isinstance(raw_path, str):
+            continue
+        src_path = Path(raw_path)
+        if not src_path.exists() or not src_path.is_file():
+            raise FileNotFoundError(f"input file not found: {src_path}")
+
+        suffix = src_path.suffix
+        dst_name = f"input_{index:02d}_{_safe_role(data_type)}{suffix}"
+        dst_path = output_dir / dst_name
+        shutil.copy2(src_path, dst_path)
+
+        artifacts.append(
+            {
+                "artifact_type": "model_output" if model_outputs else "diagnostic",
+                "role": "primary" if model_outputs and index == 0 else data_type,
+                "data_type": data_type,
+                "path": str(dst_path.relative_to(output_root)),
+                "format": suffix.lstrip(".") or "bin",
+                "size_bytes": dst_path.stat().st_size,
+                "metadata": {
+                    "source_path": str(src_path),
+                },
+            }
+        )
+
+    return artifacts
+
+
+def _sleep_range_seconds() -> int:
+    min_seconds = int(os.getenv("TEST_RUNNER_MIN_SECONDS", "360"))
+    max_seconds = int(os.getenv("TEST_RUNNER_MAX_SECONDS", "720"))
+    if min_seconds < 0 or max_seconds < min_seconds:
+        raise ValueError("invalid TEST_RUNNER_MIN_SECONDS / TEST_RUNNER_MAX_SECONDS")
+    return random.randint(min_seconds, max_seconds)
+
+
+def _write_summary(metrics_dir: Path, summary: dict[str, Any]) -> None:
+    with (metrics_dir / "summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+
+
+def _is_evaluator_mode() -> bool:
+    runner_type = os.getenv("RUNNER_TYPE", "generator").strip().lower()
+    mode = os.getenv("TEST_RUNNER_MODE", "").strip().lower()
+    return runner_type == "evaluator" or mode == "evaluator"
+
+
+def _random_evaluation_metrics() -> list[dict[str, Any]]:
+    return [
+        {
+            "namespace": "quality",
+            "name": "test_quality_score",
+            "type": "float",
+            "value": round(random.uniform(0.0, 1.0), 6),
+            "unit": "score",
+            "source": "evaluator",
+        },
+        {
+            "namespace": "quality",
+            "name": "test_geometry_error",
+            "type": "float",
+            "value": round(random.uniform(0.0, 0.25), 6),
+            "unit": "normalized_error",
+            "source": "evaluator",
+        },
     ]
     if not missing_downloads:
         return

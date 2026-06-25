@@ -112,6 +112,8 @@ Names must line up across the catalog, request, and artifacts:
 
 Choose semantic data types from the model and benchmark domain, not from local variable names. Good examples: `image`, `depth`, `camera_pose`, `scene`, `mesh`, `point_cloud`, `caption`. Keep them stable across versions unless the contract intentionally changes.
 
+For `camera_pose` request handling, read `docs/camera_pose.md`. For `camera_trajectory`, read `docs/camera_trajectory.md`.
+
 ## Outputs
 
 Generator reusable outputs must be artifacts with one of these types:
@@ -190,10 +192,12 @@ Set:
 - `kind`: `generator` or `evaluator`
 - `inputs.required` and `inputs.optional`: semantic data type keys
 - `launcher.image`: image tag the orchestrator can pull or run
+- `scheduling.job_timeout_minutes`: default timeout, in minutes, for jobs created for this runner; `deploybench job add --timeout-minutes` overrides it
 - `launcher.endpoint.port`: container port used by `RUNNER_PORT`
+- `scheduling.startup_timeout_minutes`: maximum minutes allowed for the runner wrapper to reach ready
 - `launcher.env`: optional runner-specific runtime config, such as model mode, checkpoint selector, thresholds, backend flags, credentials, API endpoints, cache locations, or weight/config paths
 
-The orchestrator injects `RUNNER_NAME`, `RUNNER_TYPE`, `RUNNER_VERSION`, `RUNNER_CONTRACT_VERSION`, and `RUNNER_PORT` from the catalog. `RUNNER_ADAPTER` defaults to `runner_wrapper.adapter:run_job`; set it in `launcher.env` only when the callable lives somewhere else. If an env value is a path, make sure that path exists in the image, is created or downloaded by startup code, or is provided by deployment-specific mounting.
+The orchestrator injects `RUNNER_NAME`, `RUNNER_TYPE`, `RUNNER_VERSION`, `RUNNER_CONTRACT_VERSION`, `RUNNER_PORT`, and `RUNNER_STARTUP_TIMEOUT_SECONDS` from the catalog. `RUNNER_ADAPTER` defaults to `runner_wrapper.adapter:run_job`; set it in `launcher.env` only when the callable lives somewhere else. If startup has not reached ready by `RUNNER_STARTUP_TIMEOUT_SECONDS`, the wrapper logs `runner_startup_timeout` and exits. If an env value is a path, make sure that path exists in the image, is created or downloaded by startup code, or is provided by deployment-specific mounting.
 
 ## Build And Smoke
 

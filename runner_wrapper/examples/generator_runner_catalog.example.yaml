@@ -16,6 +16,8 @@ runners:
     scheduling:
       max_batch_size: 50
       max_attempts: 3
+      job_timeout_minutes: 60
+      startup_timeout_minutes: 5
     launcher:
       driver: docker
       compat_version: 1
