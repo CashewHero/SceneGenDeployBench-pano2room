@@ -1,0 +1,53 @@
+catalog_version: 1
+
+runners:
+  - runner: pano2room
+    version: 0.1.0
+    latest: true
+    display_name: Pano2Room
+    kind: generator
+    contract_version: 1
+    inputs:
+      required:
+        - image
+      optional:
+        - camera_trajectory
+    scheduling:
+      max_batch_size: 1
+      max_attempts: 3
+      job_timeout_minutes: 720
+      startup_timeout_minutes: 15
+    launcher:
+      driver: docker
+      compat_version: 1
+      image: ghcr.io/cashewhero/scenegendeploybench-pano2room:0.1.0
+      gpus: all
+      endpoint:
+        port: 58090
+      env:
+        # Checkpoints default to runtime.model_cache_dir/checkpoints.
+        # PANO2ROOM_CHECKPOINT_DIR: /data/model_cache/pano2room/checkpoints
+        # Optional per-checkpoint overrides.
+        # PANO2ROOM_CHECKPOINT_LAMA_CONFIG: /data/model_cache/pano2room/checkpoints/big-lama-config.yaml
+        # PANO2ROOM_CHECKPOINT_LAMA_CKPT: /data/model_cache/pano2room/checkpoints/big-lama.ckpt
+        # PANO2ROOM_CHECKPOINT_OMNIDATA_DEPTH: /data/model_cache/pano2room/checkpoints/omnidata_dpt_depth_v2.ckpt
+        # PANO2ROOM_CHECKPOINT_OMNIDATA_NORMAL: /data/model_cache/pano2room/checkpoints/omnidata_dpt_normal_v2.ckpt
+        # Optional LoRA/SDFT weights.
+        # PANO2ROOM_CHECKPOINT_SDFT_WEIGHTS_DIR: /data/model_cache/pano2room/checkpoints/SDFT_weights
+
+        PANO2ROOM_AUTO_DOWNLOAD_WEIGHTS: "1"
+
+        # Hugging Face / Diffusers model cache.
+        PANO2ROOM_HF_STABLE_DIFFUSION_MODEL: stable-diffusion-v1-5/stable-diffusion-inpainting
+
+        # Optional resolution controls.
+        # PANO2ROOM_PANO_WIDTH: "2048"
+        # PANO2ROOM_PANO_HEIGHT: "1024"
+        # PANO2ROOM_RENDER_WIDTH: "512"
+        # PANO2ROOM_RENDER_HEIGHT: "512"
+
+        # Optional PyTorch memory tuning.
+        # PYTORCH_CUDA_ALLOC_CONF: max_split_size_mb:128
+      env_passthrough:
+        - HF_HOME
+        - HF_TOKEN
