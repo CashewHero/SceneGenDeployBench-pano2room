@@ -191,6 +191,8 @@ def validate_job_request(job_request: object) -> str | None:
         job = request_job(job_request)
         if not str(job.get("batch_id") or "").strip():
             return "job.batch_id is required"
+        if not isinstance(job.get("parameters", {}), dict):
+            return "job.parameters must be an object"
         job_timeout_seconds(job_request)
     except (TypeError, ValueError) as exc:
         return str(exc)

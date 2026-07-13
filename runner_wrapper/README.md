@@ -77,6 +77,7 @@ Use:
 
 - `sample.data`: semantic data type to input path, except `camera_pose`; `camera_trajectory` remains a path to a YAML/JSON file
 - `sample.metadata`: inherited dataset/subset/sample metadata
+- `job.parameters`: runner-specific catalog defaults merged with per-job `--set key=value` overrides
 - [Camera pose inputs](docs/camera_pose.md): how runners should read `camera_pose`
 - [Camera trajectory inputs](docs/camera_trajectory.md): how runners should read `camera_trajectory`
 - `runtime.output_dir`: durable output root

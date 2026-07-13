@@ -60,6 +60,12 @@ class RunnerContractTests(unittest.TestCase):
             "finite number",
             validate_job_request({"job": {"batch_id": "batch-1", "timeout_seconds": "nan"}}) or "",
         )
+        self.assertEqual(
+            validate_job_request(
+                {"job": {"batch_id": "batch-1", "timeout_seconds": 1, "parameters": []}}
+            ),
+            "job.parameters must be an object",
+        )
         self.assertIsNone(
             validate_job_request({"job": {"batch_id": "batch-1", "timeout_seconds": 1}})
         )

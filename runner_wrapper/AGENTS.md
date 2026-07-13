@@ -59,6 +59,7 @@ def run_job(job_request: dict) -> dict:
 Use these request fields:
 
 - `job.job_id`, `job.batch_id`, `job.timeout_seconds`
+- `job.parameters`: runner-specific catalog defaults merged with per-job overrides
 - `sample.data`: mapping from semantic data type to readable file path
 - `sample.metadata`: optional dataset or upstream-run metadata
 - `runtime.output_dir`: durable output root for this job
@@ -199,6 +200,7 @@ Set:
 - `version`: runner contract/image version
 - `kind`: `generator` or `evaluator`
 - `inputs.required` and `inputs.optional`: semantic data type keys
+- `job_parameters`: optional runner-specific defaults that `--set key=value` may override per job
 - `launcher.image`: image tag the orchestrator can pull or run
 - `scheduling.job_timeout_minutes`: default timeout, in minutes, for jobs created for this runner; `deploybench job add --timeout-minutes` overrides it
 - `launcher.endpoint.port`: container port used by `RUNNER_PORT`

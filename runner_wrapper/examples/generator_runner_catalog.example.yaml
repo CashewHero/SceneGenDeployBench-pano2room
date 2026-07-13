@@ -13,6 +13,8 @@ runners:
       optional:
         - depth
         - camera_pose
+    # Optional defaults; deploybench job add --set key=value overrides them per job.
+    job_parameters: {}
     scheduling:
       max_batch_size: 50
       max_attempts: 3
