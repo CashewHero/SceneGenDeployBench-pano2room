@@ -15,13 +15,26 @@
     "dataset_version": "unversioned",
     "external_key": "sample-1",
     "data": {
+      "image": "/data/datasets/smoke/image.png"
+    },
+    "output": {
       "scene": "/data/output/my-generator@0.1.0/smoke-dataset/sample-1/scene.glb"
     },
-    "data_types": [
-      "scene"
+    "references": [
+      {
+        "sample_id": "sample-2",
+        "external_key": "sample-2",
+        "data": {
+          "image": "/data/datasets/smoke/reference.png",
+          "camera_pose": {
+            "position": [1.0, 0.0, 0.0]
+          }
+        },
+        "metadata": {}
+      }
     ],
     "dataset_data_types": [
-      "scene"
+      "image"
     ],
     "metadata": {
       "source_runner_selector": "my-generator@0.1.0"
@@ -34,8 +47,19 @@
     "device": "cuda:0"
   },
   "config": {
-    "required_data_types": [
-      "scene"
-    ]
+    "inputs": {
+      "data": {
+        "required": ["image"],
+        "optional": ["camera_pose"]
+      },
+      "output": {
+        "required": ["scene"],
+        "optional": ["mesh"]
+      },
+      "references": {
+        "required": ["image", "camera_pose"],
+        "optional": []
+      }
+    }
   }
 }

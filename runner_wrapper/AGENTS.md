@@ -60,18 +60,20 @@ Use these request fields:
 
 - `job.job_id`, `job.batch_id`, `job.timeout_seconds`
 - `job.parameters`: runner-specific catalog defaults merged with per-job overrides
-- `sample.data`: mapping from semantic data type to readable file path
+- `sample.data`: original dataset sample used by the source job
+- `sample.output`: reusable artifacts returned by the selected source job
+- `sample.references`: other samples from the same dataset subset when requested by the catalog
 - `sample.metadata`: optional dataset or upstream-run metadata
 - `runtime.output_dir`: durable output root for this job
 - `runtime.model_cache_dir`: reusable model assets for this runner
 - `runtime.temp_dir`: scratch space for this job
 - `runtime.device`: requested device string, for example `cuda:0`
-- `config.required_data_types`: catalog-required `sample.data` keys
+- `config.inputs`: the normalized catalog input requirements for `data`, `output`, and `references`
 
 Adapter rules:
 
-- validate every `config.required_data_types` key exists in `sample.data`
-- read inputs only from `sample.data` paths or model assets in the image
+- validate required keys against `sample.data`, `sample.output`, and each item in `sample.references`
+- read inputs only from the three sample input locations or model assets in the image
 - write job outputs only under `runtime.output_dir`
 - use `runtime.model_cache_dir` only for reusable model assets
 - write `runner.log` directly in `runtime.output_dir` and flush progress while the job runs
@@ -112,10 +114,10 @@ Uncaught exceptions are converted by `server.py` into runner failures.
 
 Names must line up across the catalog, request, and artifacts:
 
-1. Catalog `inputs.required` becomes `config.required_data_types`.
-2. Each required input must be present as a key in `sample.data`.
-3. A generator's reusable artifact `data_type` becomes a future evaluator's `sample.data` key.
-4. An evaluator catalog must require the same `data_type` keys it expects.
+1. Catalog `inputs.data` describes `sample.data`.
+2. Catalog `inputs.output` describes `sample.output`.
+3. Catalog `inputs.references` describes every `sample.references[].data` mapping.
+4. A generator's reusable artifact `data_type` becomes an evaluator `sample.output` key.
 
 Choose semantic data types from the model and benchmark domain, not from local variable names. Good examples: `image`, `depth`, `camera_pose`, `scene`, `mesh`, `point_cloud`, `caption`. Keep them stable across versions unless the contract intentionally changes.
 
@@ -135,7 +137,10 @@ Reusable output artifact fields:
 - `data_type`: semantic key for downstream evaluators
 - `path`: path relative to `runtime.output_dir`
 - `format`: file format when known, for example `glb`, `obj`, `png`, `json`
+- `inputs`: optional exact provenance for this output; each entry has `source`, `data_type`, and either `path` or `value`
 - `metadata`: optional small JSON object
+
+Use `source: sample.data`, `sample.output`, or `sample.references`. Put the same artifact entries under `output_files` at the top of `metrics.json`, including distinct `inputs` lists when outputs depend on different inputs.
 
 Evaluator scores belong in `metrics`; reports, previews, summaries, and logs belong in `artifacts` with non-reusable types such as `report`, `preview`, `diagnostic`, `metric_summary`, or `job_log`.
 
@@ -199,7 +204,9 @@ Set:
 - `runner`: stable runner name
 - `version`: runner contract/image version
 - `kind`: `generator` or `evaluator`
-- `inputs.required` and `inputs.optional`: semantic data type keys
+- `inputs.data`: original dataset fields required or optionally consumed
+- `inputs.output`: selected source-runner artifacts required or optionally consumed
+- `inputs.references`: fields required or optionally consumed from same-subset reference samples
 - `job_parameters`: optional runner-specific defaults that `--set key=value` may override per job
 - `launcher.image`: image tag the orchestrator can pull or run
 - `scheduling.job_timeout_minutes`: default timeout, in minutes, for jobs created for this runner; `deploybench job add --timeout-minutes` overrides it
@@ -275,7 +282,7 @@ cp runner_wrapper/examples/github-workflows/build-runner-image.yaml \
 - `POST /run-job` returns `accepted: true`
 - terminal `result.status` is `completed` or `failed`
 - catalog `kind`, image, version, port, and input keys are correct
-- adapter validates `config.required_data_types`
+- adapter validates the required keys under `config.inputs`
 - all durable outputs are listed in `artifacts`
 - generator reusable artifacts use stable `data_type` keys
 - evaluator metrics are scalar and stable

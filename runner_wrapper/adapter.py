@@ -78,21 +78,30 @@ def utc_time(timestamp: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp))
 
 
+def _normalize_data_mapping(raw_data: Any, field_name: str) -> dict[str, Any]:
+    if raw_data is None:
+        return {}
+    if not isinstance(raw_data, dict):
+        raise ValueError(f"{field_name} must be an object")
+
+    normalized: dict[str, Any] = {}
+    for data_type, raw_value in raw_data.items():
+        data_key = str(data_type).strip()
+        if not data_key:
+            raise ValueError(f"{field_name} data type names must be non-empty")
+        if data_key == "camera_pose" and isinstance(raw_value, dict):
+            normalized[data_key] = dict(raw_value)
+            continue
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            raise ValueError(f"{field_name} path for {data_key} must be a non-empty string")
+        normalized[data_key] = raw_value.strip()
+    return normalized
+
+
 def _normalize_sample_data(sample: dict[str, Any]) -> dict[str, Any]:
     sample_data = sample.get("data")
     if isinstance(sample_data, dict) and sample_data:
-        normalized: dict[str, Any] = {}
-        for data_type, raw_value in sample_data.items():
-            data_key = str(data_type).strip()
-            if not data_key:
-                raise ValueError("sample data type names must be non-empty")
-            if data_key == "camera_pose" and isinstance(raw_value, dict):
-                normalized[data_key] = dict(raw_value)
-                continue
-            if not isinstance(raw_value, str) or not raw_value.strip():
-                raise ValueError(f"sample data path for {data_key} must be a non-empty string")
-            normalized[data_key] = raw_value.strip()
-        return normalized
+        return _normalize_data_mapping(sample_data, "sample.data")
 
     normalized: dict[str, Any] = {}
     for index, item in enumerate(sample.get("inputs", [])):
@@ -106,7 +115,25 @@ def _normalize_sample_data(sample: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _validate_required_data_types(sample_data: dict[str, Any], required_data_types: list[str]) -> None:
+def _required_inputs(config: Any, source: str) -> list[str]:
+    if not isinstance(config, dict):
+        raise ValueError("config must be an object")
+    inputs = config.get("inputs") or {}
+    if not isinstance(inputs, dict):
+        raise ValueError("config.inputs must be an object")
+    source_inputs = inputs.get(source) or {}
+    if not isinstance(source_inputs, dict):
+        raise ValueError(f"config.inputs.{source} must be an object")
+    required = source_inputs.get("required") or []
+    if not isinstance(required, list) or any(not isinstance(item, str) for item in required):
+        raise ValueError(f"config.inputs.{source}.required must be a list of strings")
+    return required
+
+
+def _validate_required_data_types(
+    sample_data: dict[str, Any],
+    required_data_types: list[str],
+) -> None:
     missing_data_types = [data_type for data_type in required_data_types if data_type not in sample_data]
     if missing_data_types:
         raise ValueError(f"sample missing required data types: {', '.join(missing_data_types)}")
@@ -324,6 +351,18 @@ def _ensure_pano2room_weights() -> None:
             ) from archive_error
 
 
+def _input_provenance(source: str, data_type: str, value: Any) -> dict[str, Any]:
+    provenance = {
+        "source": source,
+        "data_type": data_type,
+    }
+    if isinstance(value, str):
+        provenance["path"] = value
+    else:
+        provenance["value"] = value
+    return provenance
+
+
 def _write_metrics_file(metrics_path: Path, summary: dict[str, Any]) -> None:
     with metrics_path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
@@ -455,7 +494,7 @@ def _resolve_camera_trajectory_dir(sample_data: dict[str, Any], run_dir: Path) -
     return DEFAULT_CAMERA_TRAJECTORY_DIR
 
 
-def _artifact(path: Path, output_root: Path) -> dict[str, Any]:
+def _artifact(path: Path, output_root: Path, inputs: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "artifact_type": "model_output",
         "role": "primary",
@@ -463,6 +502,7 @@ def _artifact(path: Path, output_root: Path) -> dict[str, Any]:
         "path": str(path.relative_to(output_root)),
         "format": "ply",
         "size_bytes": path.stat().st_size,
+        "inputs": inputs,
         "metadata": {"runner": RUNNER_NAME},
     }
 
@@ -522,10 +562,24 @@ def _run_job_logged(
     try:
         job = job_request["job"]
         runtime = job_request["runtime"]
-        sample_data = _normalize_sample_data(job_request["sample"])
+        sample = job_request["sample"]
+        sample_data = _normalize_sample_data(sample)
+        sample_output = _normalize_data_mapping(sample.get("output"), "sample.output")
+        references = sample.get("references") or []
+        if not isinstance(references, list):
+            raise ValueError("sample.references must be a list")
+
         config = job_request.get("config", {})
-        required_data_types = config.get("required_data_types", ["image"])
-        _validate_required_data_types(sample_data, required_data_types)
+        _validate_required_data_types(sample_data, _required_inputs(config, "data"))
+        _validate_required_data_types(sample_output, _required_inputs(config, "output"))
+        required_reference_data_types = _required_inputs(config, "references")
+        if required_reference_data_types and not references:
+            raise ValueError("sample missing required references")
+        for reference in references:
+            if not isinstance(reference, dict):
+                raise ValueError("sample references must be objects")
+            reference_data = _normalize_data_mapping(reference.get("data"), "sample.references[].data")
+            _validate_required_data_types(reference_data, required_reference_data_types)
 
         image_path = Path(str(sample_data["image"]))
         if not image_path.is_file():
@@ -583,7 +637,12 @@ def _run_job_logged(
         monitor = None
         completed_at = time.time()
         wall_time_ms = round((completed_at - started_at) * 1000, 3)
-        output_artifact = _artifact(output_ply, output_root)
+        output_inputs = [_input_provenance("sample.data", "image", sample_data["image"])]
+        for data_type in CAMERA_TRAJECTORY_DATA_KEYS:
+            if data_type in sample_data:
+                output_inputs.append(_input_provenance("sample.data", data_type, sample_data[data_type]))
+                break
+        output_artifact = _artifact(output_ply, output_root, output_inputs)
         print(f"pano2room job {job.get('job_id')} completed in {wall_time_ms} ms", flush=True)
         _write_metrics_file(
             metrics_path,
