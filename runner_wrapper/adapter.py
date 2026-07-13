@@ -583,19 +583,14 @@ def _run_job_logged(
         monitor = None
         completed_at = time.time()
         wall_time_ms = round((completed_at - started_at) * 1000, 3)
+        output_artifact = _artifact(output_ply, output_root)
         print(f"pano2room job {job.get('job_id')} completed in {wall_time_ms} ms", flush=True)
         _write_metrics_file(
             metrics_path,
             {
+                "output_files": [output_artifact],
                 "metrics": resource_metrics,
                 "resource_metrics": resource_metrics,
-                "output_files": [
-                    {
-                        "path": OUTPUT_FILENAME,
-                        "format": "ply",
-                        "size_bytes": output_ply.stat().st_size,
-                    }
-                ],
             },
         )
 
@@ -614,7 +609,7 @@ def _run_job_logged(
             "completed_at": utc_time(completed_at),
             "metrics": resource_metrics,
             "artifacts": [
-                _artifact(output_ply, output_root),
+                output_artifact,
                 {
                     "artifact_type": "job_log",
                     "role": "stdout",
