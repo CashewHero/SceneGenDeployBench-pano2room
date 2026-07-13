@@ -75,7 +75,9 @@ def run_job(job_request: dict) -> dict: ...
 
 Use:
 
-- `sample.data`: semantic data type to input path, except `camera_pose`; `camera_trajectory` remains a path to a YAML/JSON file
+- `sample.data`: original dataset sample used by the source job
+- `sample.output`: reusable artifacts returned by the selected source job
+- `sample.references`: other samples from the same dataset subset when the evaluator requires references
 - `sample.metadata`: inherited dataset/subset/sample metadata
 - `job.parameters`: runner-specific catalog defaults merged with per-job `--set key=value` overrides
 - [Camera pose inputs](docs/camera_pose.md): how runners should read `camera_pose`
@@ -84,7 +86,7 @@ Use:
 - `runtime.model_cache_dir`: reusable model assets for this runner
 - `runtime.temp_dir`: scratch root
 - `runtime.device`: requested device, such as `cuda:0`
-- `config.required_data_types`: catalog-required input keys
+- `config.inputs`: the normalized catalog input requirements for `data`, `output`, and `references`
 
 Return:
 
@@ -101,7 +103,7 @@ Return:
 
 Rules:
 
-- validate that every `config.required_data_types` key exists in `sample.data`
+- validate required keys against `sample.data`, `sample.output`, and each item in `sample.references`
 - write job outputs only under `runtime.output_dir`
 - use `runtime.model_cache_dir` only for reusable model assets
 - write `runner.log` directly in `runtime.output_dir` and flush progress while the job runs
@@ -146,11 +148,28 @@ gpu.compute_time_ms
 This is the main compatibility rule:
 
 ```text
-catalog inputs.required -> config.required_data_types -> sample.data keys
-generator artifact data_type -> future evaluator sample.data key
+catalog inputs.data -> sample.data
+catalog inputs.output -> sample.output
+catalog inputs.references -> sample.references[].data
+generator artifact data_type -> future evaluator sample.output key
 ```
 
 Generator outputs are reusable only when `artifact_type` is `model_output`, `generated_output`, or `output`. Set `data_type` to the semantic key a downstream evaluator will require, for example `scene`, `mesh`, `image`, `depth`, or `point_cloud`.
+
+Each output may include an `inputs` list recording exactly what produced it. Use `path` for file or directory inputs and `value` for structured or scalar inputs:
+
+```json
+{
+  "data_type": "scene",
+  "path": "scene.ply",
+  "inputs": [
+    {"source": "sample.data", "data_type": "image", "path": "/data/datasets/example.png"},
+    {"source": "sample.data", "data_type": "camera_pose", "value": {"position": [0, 0, 0]}}
+  ]
+}
+```
+
+The same entries appear under `output_files` at the top of `metrics.json`. Outputs that use different inputs should carry different `inputs` lists.
 
 Return `runner.log`, `metrics.json`, and output files in `result.artifacts`. The orchestrator records only returned artifacts; it does not scan the output directory.
 

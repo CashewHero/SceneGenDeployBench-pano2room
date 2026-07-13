@@ -31,21 +31,30 @@ def _safe_role(role: str) -> str:
     return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in role)
 
 
+def _normalize_data_mapping(raw_data: Any, field_name: str) -> dict[str, Any]:
+    if raw_data is None:
+        return {}
+    if not isinstance(raw_data, dict):
+        raise ValueError(f"{field_name} must be an object")
+
+    normalized: dict[str, Any] = {}
+    for data_type, raw_value in raw_data.items():
+        data_key = str(data_type).strip()
+        if not data_key:
+            raise ValueError(f"{field_name} data type names must be non-empty")
+        if data_key == "camera_pose" and isinstance(raw_value, dict):
+            normalized[data_key] = dict(raw_value)
+            continue
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            raise ValueError(f"{field_name} path for {data_key} must be a non-empty string")
+        normalized[data_key] = raw_value.strip()
+    return normalized
+
+
 def _normalize_sample_data(sample: dict[str, Any]) -> dict[str, Any]:
     sample_data = sample.get("data")
     if isinstance(sample_data, dict) and sample_data:
-        normalized: dict[str, Any] = {}
-        for data_type, raw_value in sample_data.items():
-            data_key = str(data_type).strip()
-            if not data_key:
-                raise ValueError("sample data type names must be non-empty")
-            if data_key == "camera_pose" and isinstance(raw_value, dict):
-                normalized[data_key] = dict(raw_value)
-                continue
-            if not isinstance(raw_value, str) or not raw_value.strip():
-                raise ValueError(f"sample data path for {data_key} must be a non-empty string")
-            normalized[data_key] = raw_value.strip()
-        return normalized
+        return _normalize_data_mapping(sample_data, "sample.data")
 
     normalized = {}
     for index, item in enumerate(sample.get("inputs", [])):
@@ -57,6 +66,21 @@ def _normalize_sample_data(sample: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"sample input path for {data_type} must be a non-empty string")
         normalized[data_type] = raw_path.strip()
     return normalized
+
+
+def _required_inputs(config: Any, source: str) -> list[str]:
+    if not isinstance(config, dict):
+        raise ValueError("config must be an object")
+    inputs = config.get("inputs") or {}
+    if not isinstance(inputs, dict):
+        raise ValueError("config.inputs must be an object")
+    source_inputs = inputs.get(source) or {}
+    if not isinstance(source_inputs, dict):
+        raise ValueError(f"config.inputs.{source} must be an object")
+    required = source_inputs.get("required") or []
+    if not isinstance(required, list) or any(not isinstance(item, str) for item in required):
+        raise ValueError(f"config.inputs.{source}.required must be a list of strings")
+    return required
 
 
 def _validate_required_data_types(
@@ -78,7 +102,26 @@ def _validate_required_data_types(
     raise ValueError(f"sample missing required data types: {', '.join(missing_data_types)}")
 
 
-def _copy_inputs(sample_data: dict[str, Any], output_root: Path, *, model_outputs: bool) -> list[dict[str, Any]]:
+def _input_provenance(source: str, data_type: str, value: Any) -> dict[str, Any]:
+    provenance = {
+        "source": source,
+        "data_type": data_type,
+    }
+    if isinstance(value, str):
+        provenance["path"] = value
+    else:
+        provenance["value"] = value
+    return provenance
+
+
+def _copy_inputs(
+    sample_data: dict[str, Any],
+    output_root: Path,
+    *,
+    model_outputs: bool,
+    source: str,
+    name_prefix: str = "",
+) -> list[dict[str, Any]]:
     artifacts: list[dict[str, Any]] = []
     for index, (data_type, raw_path) in enumerate(sample_data.items()):
         if not isinstance(raw_path, str):
@@ -88,18 +131,20 @@ def _copy_inputs(sample_data: dict[str, Any], output_root: Path, *, model_output
             raise FileNotFoundError(f"input file not found: {src_path}")
 
         suffix = src_path.suffix
-        dst_name = f"input_{index:02d}_{_safe_role(data_type)}{suffix}"
+        output_data_type = f"{name_prefix}{data_type}"
+        dst_name = f"input_{index:02d}_{_safe_role(output_data_type)}{suffix}"
         dst_path = output_root / dst_name
         shutil.copy2(src_path, dst_path)
 
         artifacts.append(
             {
                 "artifact_type": "model_output" if model_outputs else "diagnostic",
-                "role": "primary" if model_outputs and index == 0 else data_type,
-                "data_type": data_type,
+                "role": "primary" if model_outputs and index == 0 else output_data_type,
+                "data_type": output_data_type,
                 "path": str(dst_path.relative_to(output_root)),
                 "format": suffix.lstrip(".") or "bin",
                 "size_bytes": dst_path.stat().st_size,
+                "inputs": [_input_provenance(source, data_type, raw_path)],
                 "metadata": {
                     "source_path": str(src_path),
                 },
@@ -171,8 +216,15 @@ def _run_job_logged(
     try:
         job = job_request["job"]
         runtime = job_request["runtime"]
-        sample_data = _normalize_sample_data(job_request["sample"])
-        monitor = ResourceMonitor(sample_data=sample_data, output_dir=output_root)
+        sample = job_request["sample"]
+        sample_data = _normalize_sample_data(sample)
+        sample_output = _normalize_data_mapping(sample.get("output"), "sample.output")
+        references = sample.get("references") or []
+        if not isinstance(references, list):
+            raise ValueError("sample.references must be a list")
+        monitor_data = dict(sample_data)
+        monitor_data.update({f"output.{key}": value for key, value in sample_output.items()})
+        monitor = ResourceMonitor(sample_data=monitor_data, output_dir=output_root)
         monitor.start()
         logger.info(
             event_message(
@@ -184,8 +236,19 @@ def _run_job_logged(
             )
         )
 
-        required_data_types = job_request.get("config", {}).get("required_data_types", [])
+        config = job_request.get("config", {})
+        required_data_types = _required_inputs(config, "data")
+        required_output_data_types = _required_inputs(config, "output")
+        required_reference_data_types = _required_inputs(config, "references")
         _validate_required_data_types(sample_data, required_data_types, job["job_id"])
+        _validate_required_data_types(sample_output, required_output_data_types, job["job_id"])
+        if required_reference_data_types and not references:
+            raise ValueError("sample missing required references")
+        for reference in references:
+            if not isinstance(reference, dict):
+                raise ValueError("sample references must be objects")
+            reference_data = _normalize_data_mapping(reference.get("data"), "sample.references[].data")
+            _validate_required_data_types(reference_data, required_reference_data_types, job["job_id"])
 
         metrics_path = output_root / "metrics.json"
         print(f"test runner job {job['job_id']} started", flush=True)
@@ -196,8 +259,24 @@ def _run_job_logged(
 
         time.sleep(sleep_seconds)
         evaluator_mode = _is_evaluator_mode()
-        print(f"test runner copying {len(sample_data)} input files", flush=True)
-        artifacts = _copy_inputs(sample_data, output_root, model_outputs=not evaluator_mode)
+        copied_input_count = len(sample_data) + (len(sample_output) if evaluator_mode else 0)
+        print(f"test runner copying {copied_input_count} input files", flush=True)
+        artifacts = _copy_inputs(
+            sample_data,
+            output_root,
+            model_outputs=not evaluator_mode,
+            source="sample.data",
+        )
+        if evaluator_mode:
+            artifacts.extend(
+                _copy_inputs(
+                    sample_output,
+                    output_root,
+                    model_outputs=False,
+                    source="sample.output",
+                    name_prefix="output_",
+                )
+            )
         logger.info(
             event_message(
                 "adapter_inputs_copied",

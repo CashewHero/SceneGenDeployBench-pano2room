@@ -17,9 +17,8 @@
     "data": {
       "image": "/data/datasets/smoke/image.png"
     },
-    "data_types": [
-      "image"
-    ],
+    "output": {},
+    "references": [],
     "dataset_data_types": [
       "image"
     ],
@@ -32,8 +31,19 @@
     "device": "cuda:0"
   },
   "config": {
-    "required_data_types": [
-      "image"
-    ]
+    "inputs": {
+      "data": {
+        "required": ["image"],
+        "optional": []
+      },
+      "output": {
+        "required": [],
+        "optional": []
+      },
+      "references": {
+        "required": [],
+        "optional": []
+      }
+    }
   }
 }

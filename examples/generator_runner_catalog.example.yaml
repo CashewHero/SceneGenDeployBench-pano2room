@@ -8,11 +8,12 @@ runners:
     kind: generator
     contract_version: 1
     inputs:
-      required:
-        - image
-      optional:
-        - depth
-        - camera_pose
+      data:
+        required:
+          - image
+        optional:
+          - depth
+          - camera_pose
     # Optional defaults; deploybench job add --set key=value overrides them per job.
     job_parameters: {}
     scheduling:

@@ -8,13 +8,20 @@ runners:
     kind: evaluator
     contract_version: 1
     inputs:
-      required:
-        - scene
-      optional:
-        - mesh
-        - image
-        - depth
-        - camera_trajectory
+      data:
+        required:
+          - image
+        optional:
+          - camera_pose
+      output:
+        required:
+          - scene
+        optional:
+          - mesh
+      references:
+        required:
+          - image
+          - camera_pose
     # Optional defaults; deploybench job add --set key=value overrides them per job.
     job_parameters: {}
     scheduling:
