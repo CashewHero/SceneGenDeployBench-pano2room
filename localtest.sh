@@ -69,10 +69,15 @@ build_image() {
 prepare_data() {
   mkdir -p \
     "${DATA_DIR}/datasets/smoke" \
+    "${DATA_DIR}/model_cache" \
     "${DATA_DIR}/output/my-generator@0.1.0/smoke-dataset/sample-1"
 
   if [[ ! -f "${DATA_DIR}/datasets/smoke/image.png" ]]; then
     printf 'smoke input\n' > "${DATA_DIR}/datasets/smoke/image.png"
+  fi
+
+  if [[ ! -f "${DATA_DIR}/datasets/smoke/reference.png" ]]; then
+    printf 'smoke reference\n' > "${DATA_DIR}/datasets/smoke/reference.png"
   fi
 
   if [[ ! -f "${DATA_DIR}/output/my-generator@0.1.0/smoke-dataset/sample-1/scene.glb" ]]; then
@@ -89,7 +94,11 @@ run_container() {
     -e "RUNNER_NAME=${RUNNER_NAME}"
     -e "RUNNER_TYPE=${RUNNER_TYPE}"
     -e "RUNNER_VERSION=${RUNNER_VERSION}"
+    -e "RUNNER_CONTRACT_VERSION=1"
     -e "RUNNER_ADAPTER=${RUNNER_ADAPTER}"
+    -e "PATH_DATASETS=/data/datasets"
+    -e "PATH_MODEL_CACHE=/data/model_cache"
+    -e "PATH_OUTPUT=/data/output"
   )
 
   if [[ -n "${TEST_RUNNER_MIN_SECONDS:-}" ]]; then

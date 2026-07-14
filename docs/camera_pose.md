@@ -1,20 +1,25 @@
 # Camera Pose Inputs
 
-`camera_pose` is the one `sample.data` value that may be a JSON object instead of a file path. Other common inputs such as `image`, `depth`, `scene`, and `mesh` are paths.
+`camera_pose` is a structured value under a sample in input. Other common inputs such as `image`, `depth`, `scene`, and `mesh` are paths.
 
 Example job request fragment:
 
 ```json
 {
-  "sample": {
+  "inputs": {
     "data": {
-      "image": "/data/datasets/example/image/0001.png",
-      "camera_pose": {
-        "position": [0.0, 0.0, 0.0],
-        "rotation_quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+      "sample-1": {
+        "image": "/data/datasets/example/image/0001.png",
+        "camera_pose": {
+          "position": [0.0, 0.0, 0.0],
+          "rotation_quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+        }
       }
-    },
-    "metadata": {
+    }
+  },
+  "job": {
+    "primary_sample": "sample-1",
+    "primary_sample_metadata": {
       "pose_convention": "camera_to_world",
       "pose_coordinate_system": "NED",
       "pose_units": "meters",
@@ -49,7 +54,7 @@ Supported metadata `pose_units` values:
 
 ## Runner Handling
 
-`camera_pose` contains only frame-specific pose values. Read pose context from `sample.metadata`, such as `pose_convention`, `pose_coordinate_system` or `pose_units`.
+`camera_pose` contains only frame-specific pose values. Read pose context from `job.primary_sample_metadata`, such as `pose_convention`, `pose_coordinate_system` or `pose_units`.
 
 Built-in pose defaults are zero `position`, identity `rotation_quaternion_xyzw`, and `camera_to_world` convention when no `pose_convention` is provided. Missing `pose_coordinate_system` or `pose_units` means unspecified.
 
