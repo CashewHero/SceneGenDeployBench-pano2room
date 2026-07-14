@@ -101,8 +101,12 @@ run_container() {
     -e "RUNNER_NAME=${RUNNER_NAME}"
     -e "RUNNER_TYPE=${RUNNER_TYPE}"
     -e "RUNNER_VERSION=${RUNNER_VERSION}"
+    -e "RUNNER_CONTRACT_VERSION=1"
     -e "RUNNER_ADAPTER=${RUNNER_ADAPTER}"
     -e "RUNNER_STARTUP_TIMEOUT_SECONDS=${RUNNER_STARTUP_TIMEOUT_SECONDS}"
+    -e "PATH_DATASETS=/data/datasets"
+    -e "PATH_MODEL_CACHE=/data/model_cache"
+    -e "PATH_OUTPUT=/data/output"
   )
 
   if [[ -n "${RUNNER_LOG_LEVEL:-}" ]]; then

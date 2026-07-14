@@ -1,15 +1,17 @@
 # Camera Trajectory Inputs
 
-`camera_trajectory` is file-backed. The runner receives a path in `sample.data`; all trajectory camera defaults should live inside that YAML/JSON file.
+`camera_trajectory` is file-backed. The runner receives a path under a sample in input; all trajectory camera defaults should live inside that YAML/JSON file.
 
 Runner request fragment:
 
 ```json
 {
-  "sample": {
+  "inputs": {
     "data": {
-      "image": "/data/datasets/example/image/0001.png",
-      "camera_trajectory": "/data/datasets/example/trajectories/sample_0001.yaml"
+      "sample-1": {
+        "image": "/data/datasets/example/image/0001.png",
+        "camera_trajectory": "/data/datasets/example/trajectories/sample_0001.yaml"
+      }
     }
   }
 }
@@ -50,7 +52,7 @@ Supported values:
 
 ## Runner Handling
 
-- Load the YAML/JSON file from `sample.data.camera_trajectory`.
+- Load the YAML/JSON file from the sample's `camera_trajectory` value under its input role.
 - Read trajectory-level fields such as `convention`, `coordinate_system`, `units`, `projection`, `resolution`, and `fov` from the trajectory file when present.
 - Missing `coordinate_system`, `units`, or `projection` or other fields means unspecified.
 - Missing `position` defaults to zero; missing `rotation_quaternion_xyzw` defaults to identity.

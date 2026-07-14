@@ -4,46 +4,20 @@
     "job_id": "smoke-generation-job-1",
     "batch_id": "smoke-generation-batch-1",
     "job_type": "generation",
-    "sample_id": "sample-1",
+    "primary_sample": "sample-1",
     "source_job_id": null,
     "attempt": 1,
     "timeout_seconds": 7200,
     "parameters": {}
   },
-  "sample": {
-    "dataset_name": "smoke-dataset",
-    "dataset_version": "unversioned",
-    "external_key": "sample-1",
+  "inputs": {
     "data": {
-      "image": "/data/datasets/smoke/image.png"
-    },
-    "output": {},
-    "references": [],
-    "dataset_data_types": [
-      "image"
-    ],
-    "metadata": {}
-  },
-  "runtime": {
-    "output_dir": "/data/output/pano2room@0.1.0/smoke-dataset/sample-1",
-    "model_cache_dir": "/data/model_cache/pano2room",
-    "temp_dir": "/tmp/smoke-generation-job-1",
-    "device": "cuda:0"
-  },
-  "config": {
-    "inputs": {
-      "data": {
-        "required": ["image"],
-        "optional": []
-      },
-      "output": {
-        "required": [],
-        "optional": []
-      },
-      "references": {
-        "required": [],
-        "optional": []
+      "sample-1": {
+        "image": "/data/datasets/smoke/image.png"
       }
     }
+  },
+  "runtime": {
+    "output_dir": "/data/output/pano2room@0.1.0/smoke-dataset/sample-1"
   }
 }

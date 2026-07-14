@@ -78,65 +78,33 @@ def utc_time(timestamp: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp))
 
 
-def _normalize_data_mapping(raw_data: Any, field_name: str) -> dict[str, Any]:
-    if raw_data is None:
+def _normalize_inputs(raw_inputs: Any) -> dict[str, dict[str, dict[str, Any]]]:
+    if raw_inputs is None:
         return {}
-    if not isinstance(raw_data, dict):
-        raise ValueError(f"{field_name} must be an object")
+    if not isinstance(raw_inputs, dict):
+        raise ValueError("inputs must be an object")
 
-    normalized: dict[str, Any] = {}
-    for data_type, raw_value in raw_data.items():
-        data_key = str(data_type).strip()
-        if not data_key:
-            raise ValueError(f"{field_name} data type names must be non-empty")
-        if data_key == "camera_pose" and isinstance(raw_value, dict):
-            normalized[data_key] = dict(raw_value)
-            continue
-        if not isinstance(raw_value, str) or not raw_value.strip():
-            raise ValueError(f"{field_name} path for {data_key} must be a non-empty string")
-        normalized[data_key] = raw_value.strip()
+    normalized: dict[str, dict[str, dict[str, Any]]] = {}
+    for raw_role, raw_samples in raw_inputs.items():
+        role = str(raw_role).strip()
+        if not role or not isinstance(raw_samples, dict):
+            raise ValueError("each input role must contain a sample mapping")
+        samples: dict[str, dict[str, Any]] = {}
+        for raw_sample_id, raw_sample_data in raw_samples.items():
+            sample_id = str(raw_sample_id).strip()
+            if not sample_id or not isinstance(raw_sample_data, dict):
+                raise ValueError(f"inputs.{role} must map sample ids to data mappings")
+            sample_data: dict[str, Any] = {}
+            for raw_data_type, value in raw_sample_data.items():
+                data_type = str(raw_data_type).strip()
+                if not data_type:
+                    raise ValueError(f"inputs.{role}.{sample_id} contains an empty data type")
+                sample_data[data_type] = value.strip() if isinstance(value, str) else value
+            if sample_data:
+                samples[sample_id] = sample_data
+        if samples:
+            normalized[role] = samples
     return normalized
-
-
-def _normalize_sample_data(sample: dict[str, Any]) -> dict[str, Any]:
-    sample_data = sample.get("data")
-    if isinstance(sample_data, dict) and sample_data:
-        return _normalize_data_mapping(sample_data, "sample.data")
-
-    normalized: dict[str, Any] = {}
-    for index, item in enumerate(sample.get("inputs", [])):
-        if not isinstance(item, dict):
-            raise ValueError("legacy sample inputs must be objects")
-        data_type = str(item.get("role", f"input_{index}")).strip()
-        raw_path = item.get("path")
-        if not isinstance(raw_path, str) or not raw_path.strip():
-            raise ValueError(f"sample input path for {data_type} must be a non-empty string")
-        normalized[data_type] = raw_path.strip()
-    return normalized
-
-
-def _required_inputs(config: Any, source: str) -> list[str]:
-    if not isinstance(config, dict):
-        raise ValueError("config must be an object")
-    inputs = config.get("inputs") or {}
-    if not isinstance(inputs, dict):
-        raise ValueError("config.inputs must be an object")
-    source_inputs = inputs.get(source) or {}
-    if not isinstance(source_inputs, dict):
-        raise ValueError(f"config.inputs.{source} must be an object")
-    required = source_inputs.get("required") or []
-    if not isinstance(required, list) or any(not isinstance(item, str) for item in required):
-        raise ValueError(f"config.inputs.{source}.required must be a list of strings")
-    return required
-
-
-def _validate_required_data_types(
-    sample_data: dict[str, Any],
-    required_data_types: list[str],
-) -> None:
-    missing_data_types = [data_type for data_type in required_data_types if data_type not in sample_data]
-    if missing_data_types:
-        raise ValueError(f"sample missing required data types: {', '.join(missing_data_types)}")
 
 
 def _config_string(config: dict[str, Any], key: str) -> str | None:
@@ -351,18 +319,6 @@ def _ensure_pano2room_weights() -> None:
             ) from archive_error
 
 
-def _input_provenance(source: str, data_type: str, value: Any) -> dict[str, Any]:
-    provenance = {
-        "source": source,
-        "data_type": data_type,
-    }
-    if isinstance(value, str):
-        provenance["path"] = value
-    else:
-        provenance["value"] = value
-    return provenance
-
-
 def _write_metrics_file(metrics_path: Path, summary: dict[str, Any]) -> None:
     with metrics_path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
@@ -494,19 +450,6 @@ def _resolve_camera_trajectory_dir(sample_data: dict[str, Any], run_dir: Path) -
     return DEFAULT_CAMERA_TRAJECTORY_DIR
 
 
-def _artifact(path: Path, output_root: Path, inputs: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "artifact_type": "model_output",
-        "role": "primary",
-        "data_type": "3dgs",
-        "path": str(path.relative_to(output_root)),
-        "format": "ply",
-        "size_bytes": path.stat().st_size,
-        "inputs": inputs,
-        "metadata": {"runner": RUNNER_NAME},
-    }
-
-
 def _failure_result(
     *,
     started_at: float,
@@ -514,7 +457,6 @@ def _failure_result(
     code: str,
     message: str,
     metrics: list[dict[str, Any]],
-    log_path: Path,
     retryable: bool = False,
 ) -> dict[str, Any]:
     return {
@@ -525,10 +467,7 @@ def _failure_result(
         "artifacts": [
             {
                 "artifact_type": "job_log",
-                "role": "stdout",
                 "path": "runner.log",
-                "format": "text",
-                "size_bytes": log_path.stat().st_size,
             }
         ],
         "failure": {
@@ -562,40 +501,48 @@ def _run_job_logged(
     try:
         job = job_request["job"]
         runtime = job_request["runtime"]
-        sample = job_request["sample"]
-        sample_data = _normalize_sample_data(sample)
-        sample_output = _normalize_data_mapping(sample.get("output"), "sample.output")
-        references = sample.get("references") or []
-        if not isinstance(references, list):
-            raise ValueError("sample.references must be a list")
-
-        config = job_request.get("config", {})
-        _validate_required_data_types(sample_data, _required_inputs(config, "data"))
-        _validate_required_data_types(sample_output, _required_inputs(config, "output"))
-        required_reference_data_types = _required_inputs(config, "references")
-        if required_reference_data_types and not references:
-            raise ValueError("sample missing required references")
-        for reference in references:
-            if not isinstance(reference, dict):
-                raise ValueError("sample references must be objects")
-            reference_data = _normalize_data_mapping(reference.get("data"), "sample.references[].data")
-            _validate_required_data_types(reference_data, required_reference_data_types)
-
-        image_path = Path(str(sample_data["image"]))
+        inputs = _normalize_inputs(job_request.get("inputs"))
+        data_samples = inputs.get("data", {})
+        primary_sample = str(job["primary_sample"])
+        if primary_sample not in data_samples:
+            raise ValueError(f"primary sample not found in inputs.data: {primary_sample}")
+        sample_data = data_samples[primary_sample]
+        image_value = sample_data.get("image")
+        if not isinstance(image_value, str) or not image_value:
+            raise ValueError("primary sample image must be a non-empty path")
+        image_path = Path(image_value)
         if not image_path.is_file():
             raise FileNotFoundError(f"input image not found: {image_path}")
 
-        requested_device = str(runtime.get("device", "cuda:0")).strip().lower()
-        if requested_device and not requested_device.startswith("cuda"):
-            raise RuntimeError(f"Pano2Room runner requires a CUDA device, got {requested_device}")
+        parameters = job.get("parameters") or {}
+        if not isinstance(parameters, dict):
+            raise ValueError("job.parameters must be an object")
 
-        temp_root = Path(runtime["temp_dir"])
-        run_dir = temp_root / RUNNER_NAME
+        monitor_data = {
+            f"{role}.{sample_id}.{data_type}": value
+            for role, samples in inputs.items()
+            for sample_id, sample_data in samples.items()
+            for data_type, value in sample_data.items()
+        }
+        monitor = ResourceMonitor(sample_data=monitor_data, output_dir=output_root)
+        monitor.start()
+        logger.info(
+            event_message(
+                "adapter_run_started",
+                job_id=job["job_id"],
+                batch_id=job.get("batch_id"),
+                output_dir=runtime["output_dir"],
+                input_roles=sorted(inputs),
+            )
+        )
+
+        run_dir = Path("/tmp") / str(job["job_id"]) / RUNNER_NAME
         metrics_path = output_root / "metrics.json"
         print(f"pano2room job {job.get('job_id')} started", flush=True)
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        _configure_model_paths(config, _config_string(runtime, "model_cache_dir"))
+        model_cache_dir = str(Path(os.getenv("PATH_MODEL_CACHE", "/data/model_cache")) / RUNNER_NAME)
+        _configure_model_paths(parameters, model_cache_dir)
         _validate_local_paths(_required_local_paths())
         camera_trajectory_dir = str(_resolve_camera_trajectory_dir(sample_data, run_dir))
 
@@ -617,9 +564,6 @@ def _run_job_logged(
             )
         )
 
-        monitor = ResourceMonitor(sample_data=sample_data, output_dir=output_root)
-        monitor.start()
-
         pipeline = Pano2RoomPipeline(
             image_path=str(image_path),
             save_path=str(run_dir),
@@ -637,21 +581,17 @@ def _run_job_logged(
         monitor = None
         completed_at = time.time()
         wall_time_ms = round((completed_at - started_at) * 1000, 3)
-        output_inputs = [_input_provenance("sample.data", "image", sample_data["image"])]
-        for data_type in CAMERA_TRAJECTORY_DATA_KEYS:
-            if data_type in sample_data:
-                output_inputs.append(_input_provenance("sample.data", data_type, sample_data[data_type]))
-                break
-        output_artifact = _artifact(output_ply, output_root, output_inputs)
+        output_files = {primary_sample: {"3dgs": OUTPUT_FILENAME}}
         print(f"pano2room job {job.get('job_id')} completed in {wall_time_ms} ms", flush=True)
-        _write_metrics_file(
-            metrics_path,
-            {
-                "output_files": [output_artifact],
-                "metrics": resource_metrics,
-                "resource_metrics": resource_metrics,
-            },
-        )
+        report: dict[str, Any] = {
+            "inputs": inputs,
+            "output_files": output_files,
+        }
+        if parameters:
+            report["parameters"] = dict(parameters)
+        if resource_metrics:
+            report["resource_metrics"] = resource_metrics
+        _write_metrics_file(metrics_path, report)
 
         logger.info(
             event_message(
@@ -662,28 +602,25 @@ def _run_job_logged(
             )
         )
 
-        return {
+        result = {
             "status": "completed",
             "started_at": utc_time(started_at),
             "completed_at": utc_time(completed_at),
             "metrics": resource_metrics,
             "artifacts": [
-                output_artifact,
                 {
                     "artifact_type": "job_log",
-                    "role": "stdout",
                     "path": "runner.log",
-                    "format": "text",
                 },
                 {
                     "artifact_type": "metric_summary",
-                    "role": "summary",
                     "path": "metrics.json",
-                    "format": "json",
                 },
             ],
             "failure": None,
+            "output_files": output_files,
         }
+        return result
     except Exception as exc:
         if monitor is not None:
             resource_metrics = monitor.stop()
@@ -696,5 +633,4 @@ def _run_job_logged(
             code="PANO2ROOM_RUN_FAILED",
             message="Pano2Room failed; see runner.log",
             metrics=resource_metrics,
-            log_path=log_path,
         )

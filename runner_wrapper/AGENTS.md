@@ -1,165 +1,186 @@
-# Runner Adaptation
+# Runner Adaptation Instructions
 
-This folder is meant to be copied into a model repository. Assume no other SceneGenDeployBench files are available. Your task is to wrap the existing model as one HTTP runner image that the orchestrator can launch.
+These instructions are for coding agents adapting this wrapper inside a model repository. Read `README.md` for the human-facing project overview and commands; do not duplicate those sections here.
 
-Wrap the model repo; do not redesign it. Prefer changes in `runner_wrapper/`, Docker/package wiring, config, and small launch scripts. Patch original model source only when unavoidable, and document why.
+## Scope And Boundaries
 
-## Choose One Role
+Verify the repository naming requirement documented in the README before editing. Stop and notify the user if it is not satisfied.
 
-Build exactly one role per image:
+Wrap the existing model rather than redesigning it. Prefer changes in `runner_wrapper/`, dependency and Docker wiring, catalog configuration, and small launch scripts. Modify original model code only when integration cannot be achieved cleanly from the wrapper, and explain why in the handoff.
 
-- `generator`: consumes dataset inputs and returns reusable generated outputs.
-- `evaluator`: consumes dataset inputs and/or generated outputs, then returns scalar metrics plus optional reports, previews, or logs.
+Follow the README's one-role-per-image rule. Do not add runtime switches that create a hybrid runner.
 
-Set the catalog `kind` to the chosen role. In orchestrated runs, `RUNNER_TYPE` is injected from that catalog value. For manual runs, set `RUNNER_TYPE` to the same value. Do not implement a hybrid runner.
+Reuse `job_logging.py` and `measurements.py`. Keep `server.py` stable unless the shared HTTP contract itself changes.
 
-## Repository And Image Naming
+Do not assume that an orchestrator source tree exists in the target repository. Do not write to PostgreSQL. Do not put private credentials, datasets, caches, or local model weights in the image or repository.
 
-Before editing, check that the target repo name starts with `SceneGenDeployBench-`. If it does not, stop and notify the user. The image name is derived from the repo name for GHCR.
+## Inspect Before Editing
 
-## Files To Edit
+Identify:
 
-Usually edit or create only:
+1. the real inference entry point;
+2. required Python, system, CUDA, and model dependencies;
+3. how weights are found or downloaded;
+4. accepted model inputs and their coordinate/projection assumptions;
+5. generated files or evaluator scores;
+6. the smallest realistic smoke input.
 
-- `runner_wrapper/adapter.py`
-- `runner_wrapper/job_logging.py`
-- `runner_wrapper/measurements.py`
-- `runner_wrapper/Dockerfile`
-- `runner_wrapper/config/runners/<runner>.yaml`
-- `.dockerignore`
-- `.github/workflows/runner-image.yaml`, copied from the template
+Choose stable semantic data types from the benchmark domain, such as `image`, `depth`, `camera_pose`, `camera_trajectory`, `3dgs`, `mesh`, `scene`, or `point_cloud`. Do not use model-local variable names as contract types.
 
-Keep `runner_wrapper/server.py` stable unless the HTTP contract changes.
+## Adaptation Sequence
 
-## Orchestrator Contract
+1. Choose one runner role and its semantic input and output types.
+2. Replace the bundled test logic in `adapter.py` with the smallest model-specific integration.
+3. Update `Dockerfile` and the repository dependencies for the model. Copy `examples/dockerignore.example` to the repository root as `.dockerignore` if an equivalent file is not already present.
+4. Update the matching request example into a realistic smoke request. Copy the matching catalog example to `runner_wrapper/config/runners/<runner>.yaml`, then make both agree with the adapter.
+5. Add a short note to the model repository's main README naming the runner role, semantic inputs/outputs, and where to find the wrapper instructions.
+6. Add the image workflow using the README command when the repository will publish through GitHub Actions.
+7. Run the unit, build, and smoke checks before handoff.
 
-The orchestrator owns scheduling, retries, persistence, and database writes. The runner executes one request at a time and reports the terminal result through `GET /status`.
+The bundled adapter and examples are contract fixtures, not a complete model implementation. The test adapter supports both fixture roles only so this shared wrapper can be tested; a model adapter must keep one role. Replace placeholder names, image tags, paths, data types, generated files, and evaluator metrics. Preserve the request, result, server, and measurement contracts described below.
 
-HTTP endpoints exposed by `server.py`:
+## Request Contract
 
-- `GET /status`
-- `POST /run-job`
-- `POST /shutdown`
-
-Runner states:
-
-- `starting`, `idle`, `running`, `finished`, `failed`, `shutting_down`
-
-`POST /run-job` accepts a JSON request, starts work in a background thread, and returns `accepted: true` when the runner is available. Poll `GET /status` until `state` is `finished` or `failed`; then read `result`.
-
-## Adapter Contract
-
-`adapter.py` must expose:
+`adapter.py` exposes:
 
 ```python
 def run_job(job_request: dict) -> dict:
     ...
 ```
 
-Use these request fields:
+The request contains only:
 
-- `job.job_id`, `job.batch_id`, `job.timeout_seconds`
-- `job.parameters`: runner-specific catalog defaults merged with per-job overrides
-- `sample.data`: original dataset sample used by the source job
-- `sample.output`: reusable artifacts returned by the selected source job
-- `sample.references`: other samples from the same dataset subset when requested by the catalog
-- `sample.metadata`: optional dataset or upstream-run metadata
-- `runtime.output_dir`: durable output root for this job
-- `runtime.model_cache_dir`: reusable model assets for this runner
-- `runtime.temp_dir`: scratch space for this job
-- `runtime.device`: requested device string, for example `cuda:0`
-- `config.inputs`: the normalized catalog input requirements for `data`, `output`, and `references`
+- `contract_version`
+- `job`
+- `inputs`
+- `runtime`
 
-Adapter rules:
+Relevant job fields:
 
-- validate required keys against `sample.data`, `sample.output`, and each item in `sample.references`
-- read inputs only from the three sample input locations or model assets in the image
-- write job outputs only under `runtime.output_dir`
-- use `runtime.model_cache_dir` only for reusable model assets
-- write `runner.log` directly in `runtime.output_dir` and flush progress while the job runs
-- write `metrics.json` directly in `runtime.output_dir`
-- write output files directly in `runtime.output_dir`, for example `3DGS.ply`
-- use `runtime.temp_dir` for scratch files
-- do not write to PostgreSQL or assume an orchestrator source tree is present
-- return artifact paths relative to `runtime.output_dir`
-- return `status: "completed"` or `status: "failed"`
+- `job.job_id`
+- `job.batch_id`
+- `job.job_type`
+- `job.primary_sample`: the input sample that owns the job
+- `job.primary_sample_metadata`: inherited dataset metadata, omitted when empty
+- `job.source_job_id`: upstream job identity when applicable
+- `job.attempt`
+- `job.timeout_seconds`
+- `job.parameters`: catalog defaults merged with per-job overrides
 
-Return shape:
+The orchestrator validates catalog requirements before dispatch. A runner request does not contain the catalog contract or a root `config` object. Adapter validation should cover operational assumptions such as readable files, supported formats, and model constraints.
+
+### Shared Server Lifecycle
+
+Do not replace the shared lifecycle when adapting a model. `server.py` exposes:
+
+- `GET /status`
+- `POST /run-job`
+- `POST /shutdown`
+
+States are `starting`, `idle`, `running`, `finished`, `failed`, and `shutting_down`. The server accepts one job at a time and binds to the first accepted `job.batch_id`; another batch is rejected until the runner container is replaced.
+
+`job.timeout_seconds` is required. The adapter runs in a child process, and the server terminates it if it is still running after `job.timeout_seconds + 60` seconds. The startup watchdog uses `RUNNER_STARTUP_TIMEOUT_SECONDS`, normally the catalog startup timeout plus one minute.
+
+### Inputs
+
+Every input role has the same shape:
+
+```text
+inputs -> role -> sample_id -> data_type -> data
+```
+
+Roles:
+
+- `inputs.data`: original dataset samples
+- `inputs.output`: reusable files produced by the selected upstream runner, normally consumed by an evaluator
+- `inputs.references`: additional same-subset dataset samples, such as other viewpoints
+
+`inputs.output` is an input to the current job. It does not describe files being produced by the current runner.
+
+File and directory data are absolute paths. Structured types such as `camera_pose` remain JSON values. Empty roles are omitted. Read `docs/camera_pose.md` and `docs/camera_trajectory.md` when those types are used.
+
+### Runtime And Environment
+
+`runtime.output_dir` is the only per-job runtime path. Write every durable job file below it.
+
+Runner containers receive shared roots through:
+
+- `PATH_DATASETS`
+- `PATH_MODEL_CACHE`
+- `PATH_OUTPUT`
+
+Use `PATH_MODEL_CACHE` for reusable downloaded assets. Derive temporary job space from `job.job_id` under `/tmp`. Device access and runner-specific paths or flags belong in container/catalog environment configuration.
+
+The orchestrator also injects `RUNNER_PORT`, `RUNNER_NAME`, `RUNNER_TYPE`, `RUNNER_VERSION`, `RUNNER_CONTRACT_VERSION`, and `RUNNER_STARTUP_TIMEOUT_SECONDS`. The image configures `RUNNER_ADAPTER` and `RUNNER_IDLE_TIMEOUT_SECONDS`; the latter shuts down a non-running server after it stops receiving status traffic for that interval. Use these values through `server.py`; do not hardcode a second identity or port in the adapter.
+
+## Result Contract
+
+Return a terminal result:
 
 ```json
 {
   "status": "completed",
   "started_at": "2026-04-18T10:00:00Z",
   "completed_at": "2026-04-18T10:07:31Z",
+  "output_files": {
+    "sample-1": {
+      "3dgs": "3DGS.ply"
+    }
+  },
   "metrics": [],
-  "artifacts": [],
+  "artifacts": [
+    {"artifact_type": "job_log", "path": "runner.log"},
+    {"artifact_type": "metric_summary", "path": "metrics.json"}
+  ],
   "failure": null
 }
 ```
 
-For handled failures, return `status: "failed"` and:
+Rules:
+
+- `output_files` contains only reusable outputs from the current runner.
+- Its shape is `sample_id -> data_type -> relative path`.
+- Construct the mapping once, write the same mapping near the top of `metrics.json`, and return it in the result.
+- Omit `output_files` when no reusable files were produced.
+- `artifacts` contains administrative or diagnostic files, not reusable model outputs.
+- Artifact and output paths are relative to `runtime.output_dir`.
+- `metrics` contains evaluator scores and standard measurements.
+- Do not scan the output directory to infer the result; report files explicitly.
+
+Keep the output folder flat and readable where practical: `runner.log`, `metrics.json`, and actual output files.
+
+Write `metrics.json` for human inspection with this top-level order:
+
+1. `inputs`, copied from the normalized request inputs;
+2. `output_files`, when present, using the same object returned in the result;
+3. non-empty `parameters`;
+4. evaluator `metrics` and standard `resource_metrics`, when present.
+
+For handled failures, return the normal terminal result shape with `status: "failed"` and a populated `failure` field:
 
 ```json
 {
-  "code": "MODEL_ERROR",
-  "message": "short reason",
-  "retryable": false,
-  "stage": "adapter"
+  "status": "failed",
+  "started_at": "2026-04-18T10:00:00Z",
+  "completed_at": "2026-04-18T10:00:05Z",
+  "metrics": [],
+  "artifacts": [
+    {"artifact_type": "job_log", "path": "runner.log"}
+  ],
+  "failure": {
+    "code": "MODEL_ERROR",
+    "message": "short reason",
+    "retryable": false,
+    "stage": "adapter"
+  }
 }
 ```
 
 Uncaught exceptions are converted by `server.py` into runner failures.
 
-## Line-Up Rule
+## Metrics And Logging
 
-Names must line up across the catalog, request, and artifacts:
-
-1. Catalog `inputs.data` describes `sample.data`.
-2. Catalog `inputs.output` describes `sample.output`.
-3. Catalog `inputs.references` describes every `sample.references[].data` mapping.
-4. A generator's reusable artifact `data_type` becomes an evaluator `sample.output` key.
-
-Choose semantic data types from the model and benchmark domain, not from local variable names. Good examples: `image`, `depth`, `camera_pose`, `scene`, `mesh`, `point_cloud`, `caption`. Keep them stable across versions unless the contract intentionally changes.
-
-For `camera_pose` request handling, read `docs/camera_pose.md`. For `camera_trajectory`, read `docs/camera_trajectory.md`.
-
-## Outputs
-
-Generator reusable outputs must be artifacts with one of these types:
-
-- `model_output`
-- `generated_output`
-- `output`
-
-Reusable output artifact fields:
-
-- `artifact_type`: one of the reusable types above
-- `data_type`: semantic key for downstream evaluators
-- `path`: path relative to `runtime.output_dir`
-- `format`: file format when known, for example `glb`, `obj`, `png`, `json`
-- `inputs`: optional exact provenance for this output; each entry has `source`, `data_type`, and either `path` or `value`
-- `metadata`: optional small JSON object
-
-Use `source: sample.data`, `sample.output`, or `sample.references`. Put the same artifact entries under `output_files` at the top of `metrics.json`, including distinct `inputs` lists when outputs depend on different inputs.
-
-Evaluator scores belong in `metrics`; reports, previews, summaries, and logs belong in `artifacts` with non-reusable types such as `report`, `preview`, `diagnostic`, `metric_summary`, or `job_log`.
-
-Every completed job should leave a concise flat folder: `runner.log`, `metrics.json`, and the output files themselves, such as `3DGS.ply`. Return all of them in `artifacts`.
-
-Metric fields:
-
-- `namespace`: group, for example `quality`, `geometry`, `performance`
-- `name`: stable metric name
-- `type`: `float`, `integer`, `boolean`, or `string`
-- `value`: scalar value
-- `unit`: optional unit or scale
-- `source`: `runner`, `model`, or `evaluator`
-
-The orchestrator records only artifacts and metrics returned in the result. It does not scan the output directory.
-
-## Measurements
-
-Use `ResourceMonitor` from `runner_wrapper.measurements` around the job body and report these standard per-job metrics when available:
+Use `ResourceMonitor` around the model job and report available standard measurements:
 
 ```text
 resources.cpu_time_ms
@@ -175,118 +196,70 @@ gpu.device_memory_total_bytes
 performance.wall_time_ms
 ```
 
-Optional when the wrapped repo exposes them cleanly:
+Optional model measurements may include `model.estimated_ops`, `model.inference_steps`, `gpu.energy_joules`, or `gpu.compute_time_ms`. Omit values that cannot be measured; never report guessed zeroes.
+
+Evaluator metric entries use stable `namespace`, `name`, `type`, `value`, optional `unit`, and `source` fields. Metric `type` is `float`, `integer`, `boolean`, or `string`; `source` is normally `runner`, `model`, or `evaluator`. Keep evaluator quality scores separate from resource metrics.
+
+Use `tee_job_output` so model stdout and stderr reach both Docker logs and `runner.log`. Preserve exceptions and useful progress while avoiding high-frequency progress-bar noise.
+
+## Catalog Alignment
+
+Create one YAML under `runner_wrapper/config/runners/` from the matching example. This is the runner's distributable catalog; a deployment copies it into its active runner-config directory. Do not make the model repository depend on an orchestrator checkout. Ensure these fields match the adapter:
+
+- required identity: `runner`, `version`, `display_name`, and `kind`
+- version selection: `latest` and `contract_version`
+- `inputs.data`
+- `inputs.output`
+- `inputs.references`
+- `job_parameters`
+- `launcher.driver` and `launcher.compat_version`
+- `launcher.image` for the Docker driver
+- `launcher.endpoint.port`
+- `launcher.env` and `launcher.env_passthrough`
+- optional Docker settings such as `launcher.gpus` and `launcher.user`
+- `scheduling.max_batch_size`, `max_attempts`, `job_timeout_minutes`, and `startup_timeout_minutes`
+
+Set `kind` explicitly to one supported role. Mark exactly one version of a runner name as `latest` when multiple versions are present. Keep `contract_version` aligned with the wrapper server.
+
+Names must line up exactly:
 
 ```text
-model.estimated_ops
-model.inference_steps
-gpu.energy_joules
-gpu.compute_time_ms
+catalog inputs.data       -> request inputs.data
+catalog inputs.output     -> request inputs.output
+catalog inputs.references -> request inputs.references
+producer output_files     -> downstream evaluator inputs.output
 ```
 
-Omit metrics that cannot be measured. Do not return guessed zeroes. Keep model-specific quality/evaluator scores separate from these resource metrics.
+The semantic data type reported by a producer must be the type required by its consumer.
+The catalog describes inputs; a producer reports the outputs it actually created through each job result's `output_files` mapping.
 
-## Catalog
+## Docker Adaptation
 
-Create one catalog YAML under `runner_wrapper/config/runners/` using the matching example as a starting point:
+Keep heavyweight or mutable weights in the shared model cache unless licensing or reproducibility requires image-bundled public assets. Make automatic downloads concurrency-safe and deterministic. Document required tokens without committing them.
 
-```bash
-mkdir -p runner_wrapper/config/runners
-```
+Use the catalog `launcher.env` for model mode, checkpoint selection, thresholds, backend flags, and paths. Use `env_passthrough` only for values supplied by deployment, such as credentials.
 
-```text
-runner_wrapper/examples/generator_runner_catalog.example.yaml
-runner_wrapper/examples/evaluator_runner_catalog.example.yaml
-```
+The HTTP process must become ready without loading per-job inputs. Load expensive reusable model state at startup only when that model benefits from it and failures remain clear.
 
-Set:
+## Verification
 
-- `runner`: stable runner name
-- `version`: runner contract/image version
-- `kind`: `generator` or `evaluator`
-- `inputs.data`: original dataset fields required or optionally consumed
-- `inputs.output`: selected source-runner artifacts required or optionally consumed
-- `inputs.references`: fields required or optionally consumed from same-subset reference samples
-- `job_parameters`: optional runner-specific defaults that `--set key=value` may override per job
-- `launcher.image`: image tag the orchestrator can pull or run
-- `scheduling.job_timeout_minutes`: default timeout, in minutes, for jobs created for this runner; `deploybench job add --timeout-minutes` overrides it
-- `launcher.endpoint.port`: container port used by `RUNNER_PORT`
-- `scheduling.startup_timeout_minutes`: maximum minutes the orchestrator waits for this runner to reach ready
-- `launcher.env`: optional runner-specific runtime config, such as model mode, checkpoint selector, thresholds, backend flags, credentials, API endpoints, cache locations, or weight/config paths
+Run the build and smoke commands documented in the README, then verify:
 
-Timeout guards:
+- the server reaches `idle`;
+- a realistic small request is accepted;
+- the job reaches `finished` or returns a useful failure;
+- `runner.log` and `metrics.json` exist;
+- reusable files appear only in `output_files` with correct semantic types;
+- evaluator metrics are scalar and stable;
+- paths work inside the container without host-only assumptions;
+- the catalog image, port, role, types, and environment match the built image.
 
-- Startup: `RUNNER_STARTUP_TIMEOUT_SECONDS` is `scheduling.startup_timeout_minutes + 1 minute`; the wrapper logs `runner_startup_timeout` and exits when reached.
-- Job: `server.py` requires `job.timeout_seconds`; if the adapter is still running after `job.timeout_seconds + 60`, the wrapper logs `runner_job_timeout`, terminates the job process, and marks the job failed.
+## Handoff
 
-## Build And Smoke
+Report:
 
-Adaptation workflow:
-
-1. Inspect the model entry points, dependencies, weights, inputs, and outputs.
-2. Choose exactly one role and the stable input/output data type names.
-3. Replace the test adapter logic in `runner_wrapper/adapter.py`.
-4. Update `runner_wrapper/Dockerfile` for dependencies, package install, model assets, and weight handling.
-5. Add `.dockerignore` entries for datasets, outputs, caches, and local weights that should not be baked into the image.
-6. Create one catalog YAML in `runner_wrapper/config/runners/`.
-7. Add a short top README note about the repo turned into a runner for [SceneGenDeployBench](https://github.com/CashewHero/SceneGenDeployBench); see `runner_wrapper/` for implementation details.
-8. Install `.github/workflows/runner-image.yaml` from the template.
-9. Build and smoke test.
-
-Build from the model repo root:
-
-```bash
-docker build -f runner_wrapper/Dockerfile -t my-model-runner .
-```
-
-Use the helper:
-
-```bash
-runner_wrapper/localtest.sh build
-runner_wrapper/localtest.sh smoke
-```
-
-Manual run:
-
-```bash
-docker run --rm -p 58090:58090 \
-  -e RUNNER_NAME=my-model \
-  -e RUNNER_TYPE=generator \
-  -e RUNNER_VERSION=0.1.0 \
-  -v "$PWD/data:/data" \
-  my-model-runner
-```
-
-Submit a smoke request and poll status:
-
-```bash
-curl -sS -X POST http://127.0.0.1:58090/run-job \
-  -H 'Content-Type: application/json' \
-  --data @runner_wrapper/examples/generator_job_request.json
-
-curl -sS http://127.0.0.1:58090/status
-```
-
-Install the image-build workflow:
-
-```bash
-mkdir -p .github/workflows
-cp runner_wrapper/examples/github-workflows/build-runner-image.yaml \
-  .github/workflows/runner-image.yaml
-```
-
-## Final Checklist
-
-- one image implements one role only
-- `GET /status` returns `state: "idle"` before a job
-- `POST /run-job` returns `accepted: true`
-- terminal `result.status` is `completed` or `failed`
-- catalog `kind`, image, version, port, and input keys are correct
-- adapter validates the required keys under `config.inputs`
-- all durable outputs are listed in `artifacts`
-- generator reusable artifacts use stable `data_type` keys
-- evaluator metrics are scalar and stable
-- standard resource measurements are reported when available
-- artifact paths are relative to `runtime.output_dir`
-- `.github/workflows/runner-image.yaml` builds the image
-- `runner_wrapper/config/runners/<runner>.yaml` is ready to copy into the orchestrator repo's `config/runners/` directory
+- the selected role and semantic input/output types;
+- required model assets and environment variables;
+- build and smoke results;
+- any changes outside `runner_wrapper/` and why they were necessary;
+- any remaining limitation that affects real benchmark runs.
