@@ -8,10 +8,11 @@ runners:
     kind: generator
     contract_version: 1
     inputs:
-      required:
-        - image
-      optional:
-        - camera_trajectory
+      data:
+        required:
+          - image
+        optional:
+          - camera_trajectory
     scheduling:
       max_batch_size: 1
       max_attempts: 3
@@ -25,7 +26,7 @@ runners:
       endpoint:
         port: 58090
       env:
-        # Checkpoints default to runtime.model_cache_dir/checkpoints.
+        # Checkpoints default to PATH_MODEL_CACHE/pano2room/checkpoints.
         # PANO2ROOM_CHECKPOINT_DIR: /data/model_cache/pano2room/checkpoints
         # Optional per-checkpoint overrides.
         # PANO2ROOM_CHECKPOINT_LAMA_CONFIG: /data/model_cache/pano2room/checkpoints/big-lama-config.yaml
