@@ -178,6 +178,7 @@ def run_job_child(
     job_request: dict[str, Any],
     result_queue: multiprocessing.Queue,
 ) -> None:
+    configure_logging()
     try:
         result_queue.put({"ok": True, "result": run_job_handler(job_request)})
     except Exception as exc:

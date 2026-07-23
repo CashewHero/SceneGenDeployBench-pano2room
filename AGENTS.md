@@ -93,7 +93,7 @@ Roles:
 
 - `inputs.data`: original dataset samples
 - `inputs.output`: reusable files produced by the selected upstream runner, normally consumed by an evaluator
-- `inputs.references`: additional same-subset dataset samples, such as other viewpoints
+- `inputs.references`: additional dataset or runner-output samples selected with `--reference`
 
 `inputs.output` is an input to the current job. It does not describe files being produced by the current runner.
 
@@ -218,6 +218,22 @@ Create one YAML under `runner_wrapper/config/runners/` from the matching example
 - `launcher.env` and `launcher.env_passthrough`
 - optional Docker settings such as `launcher.gpus` and `launcher.user`
 - `scheduling.max_batch_size`, `max_attempts`, `job_timeout_minutes`, and `startup_timeout_minutes`
+
+Catalog input config example:
+
+```yaml
+inputs:
+  data:
+    required_sample:
+      required_datatype: [image]
+      optional_datatype: [camera_pose]
+  output:
+    required_sample:
+      required_datatype: [3dgs]
+  references:
+    optional_sample:
+      required_datatype: [image, camera_pose]
+```
 
 Set `kind` explicitly to one supported role. Mark exactly one version of a runner name as `latest` when multiple versions are present. Keep `contract_version` aligned with the wrapper server.
 

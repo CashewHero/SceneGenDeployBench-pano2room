@@ -9,11 +9,12 @@ runners:
     contract_version: 1
     inputs:
       data:
-        required:
-          - image
-        optional:
-          - depth
-          - camera_pose
+        required_sample:
+          required_datatype:
+            - image
+          optional_datatype:
+            - depth
+            - camera_pose
     # Optional defaults; deploybench job add --set key=value overrides them per job.
     job_parameters: {}
     scheduling:
