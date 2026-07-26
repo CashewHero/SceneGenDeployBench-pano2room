@@ -1,0 +1,15 @@
+.git
+.github
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+*.pyc
+.venv
+venv
+data
+output
+outputs
+checkpoints/*.ckpt
+weights
+*.egg-info
