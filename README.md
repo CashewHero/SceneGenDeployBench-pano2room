@@ -1,6 +1,8 @@
 ## Note
 
-This is a clone of the original [Pano2Room repo](https://github.com/TrickyGo/Pano2Room), ported as a runner for [SceneGenDeployBench](https://github.com/CashewHero/SceneGenDeployBench). See `runner_wrapper/` for implementation details.
+This is a clone of the original [Pano2Room repo](https://github.com/TrickyGo/Pano2Room), ported as runner `pano2room` for [SceneGenDeployBench](https://github.com/CashewHero/SceneGenDeployBench). See `runner_wrapper/` for implementation details.
+
+The image uses CUDA 11.8, builds CUDA extensions for architectures 7.5, 8.0, 8.6, and 8.9, with PTX included for 8.9.
 
 ---
 

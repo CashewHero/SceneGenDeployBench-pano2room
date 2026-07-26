@@ -18,6 +18,6 @@
     }
   },
   "runtime": {
-    "output_dir": "/data/output/pano2room@0.1.0/smoke-dataset/sample-1"
+    "output_dir": "/data/output/pano2room@0.1.1/smoke-dataset/sample-1"
   }
 }

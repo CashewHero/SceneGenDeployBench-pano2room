@@ -242,7 +242,7 @@ def _download_checkpoint_archive(output_paths: dict[str, Path]) -> None:
             checkpoint_root.mkdir(parents=True, exist_ok=True)
             request = urllib.request.Request(
                 PANO2ROOM_WEIGHT_ARCHIVE_URL,
-                headers={"User-Agent": "SceneGenDeployBench-Pano2Room/0.1.0"},
+                headers={"User-Agent": "SceneGenDeployBench-Pano2Room/0.1.1"},
             )
             print(
                 "Google Drive checkpoint download failed; downloading official "

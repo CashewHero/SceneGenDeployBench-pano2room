@@ -3,7 +3,7 @@ FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-devel
 WORKDIR /app/model_repo
 
 # Build from the repository root:
-# docker build -f runner_wrapper/Dockerfile -t scenegendeploybench-pano2room:0.1.0 .
+# docker build -f runner_wrapper/Dockerfile -t scenegendeploybench-pano2room:0.1.1 .
 COPY requirements.txt requirements_git.txt /app/model_repo/
 
 ENV PYTHONPATH=/app/model_repo:/app
@@ -14,9 +14,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends git ffmpeg libgl1 libglib2.0-0 ninja-build && \
     rm -rf /var/lib/apt/lists/*
 
-ARG TCNN_CUDA_ARCHITECTURES=75
+ARG TCNN_CUDA_ARCHITECTURES=75;80;86;89
 ENV TCNN_CUDA_ARCHITECTURES=${TCNN_CUDA_ARCHITECTURES}
-ARG TORCH_CUDA_ARCH_LIST=7.5
+ARG TORCH_CUDA_ARCH_LIST=7.5;8.0;8.6;8.9+PTX
 ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}
 ENV FORCE_CUDA=1
 
@@ -43,7 +43,7 @@ ENV PYTHONUNBUFFERED=1
 ENV RUNNER_PORT=58090
 ENV RUNNER_NAME=pano2room
 ENV RUNNER_TYPE=generator
-ENV RUNNER_VERSION=0.1.0
+ENV RUNNER_VERSION=0.1.1
 ENV RUNNER_CONTRACT_VERSION=1
 ENV RUNNER_IDLE_TIMEOUT_SECONDS=900
 ENV RUNNER_ADAPTER=runner_wrapper.adapter:run_job
