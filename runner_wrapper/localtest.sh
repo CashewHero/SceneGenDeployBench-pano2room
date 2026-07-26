@@ -17,7 +17,7 @@ HOST_PORT="${RUNNER_HOST_PORT:-58090}"
 DATA_DIR="${RUNNER_DATA_DIR:-${REPO_ROOT}/data}"
 RUNNER_NAME="${RUNNER_NAME:-pano2room}"
 RUNNER_TYPE="${RUNNER_TYPE:-generator}"
-RUNNER_VERSION="${RUNNER_VERSION:-0.1.1}"
+RUNNER_VERSION="${RUNNER_VERSION:-0.1.2}"
 RUNNER_ADAPTER="${RUNNER_ADAPTER:-runner_wrapper.adapter:run_job}"
 RUNNER_WEIGHTS_DIR="${RUNNER_WEIGHTS_DIR:-}"
 RUNNER_DOCKER_GPUS="${RUNNER_DOCKER_GPUS:-all}"
@@ -80,7 +80,7 @@ prepare_data() {
     "${DATA_DIR}/datasets/smoke" \
     "${DATA_DIR}/model_cache/pano2room" \
     "${DATA_DIR}/pipelines" \
-    "${DATA_DIR}/output/pano2room@0.1.1/smoke-dataset/sample-1"
+    "${DATA_DIR}/output/pano2room@0.1.2/smoke-dataset/sample-1"
 
   if [[ ! -f "${DATA_DIR}/datasets/smoke/image.png" ]]; then
     if [[ -f "${REPO_ROOT}/input/input_panorama.png" ]]; then

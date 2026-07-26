@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from runner_wrapper.files import publish_file
 from runner_wrapper.job_logging import tee_job_output
 from runner_wrapper.measurements import ResourceMonitor
 
@@ -190,12 +191,7 @@ def _copy_lama_config_if_needed(target_path: Path) -> None:
     with _exclusive_path_lock(target_path):
         if _usable_path(target_path):
             return
-        temp_path = target_path.with_name(f".{target_path.name}.{uuid.uuid4().hex}.part")
-        try:
-            shutil.copy2(source_path, temp_path)
-            os.replace(temp_path, target_path)
-        finally:
-            temp_path.unlink(missing_ok=True)
+        publish_file(source_path, target_path)
 
 
 def _download_with_gdown(url: str, output_path: Path) -> None:
@@ -242,7 +238,7 @@ def _download_checkpoint_archive(output_paths: dict[str, Path]) -> None:
             checkpoint_root.mkdir(parents=True, exist_ok=True)
             request = urllib.request.Request(
                 PANO2ROOM_WEIGHT_ARCHIVE_URL,
-                headers={"User-Agent": "SceneGenDeployBench-Pano2Room/0.1.1"},
+                headers={"User-Agent": "SceneGenDeployBench-Pano2Room/0.1.2"},
             )
             print(
                 "Google Drive checkpoint download failed; downloading official "
@@ -593,7 +589,7 @@ def _run_job_logged(
 
         output_name = f"3DGS-{variant}.ply"
         output_ply = output_root / output_name
-        shutil.copy2(source_ply, output_ply)
+        publish_file(source_ply, output_ply)
         resource_metrics = monitor.stop()
         monitor = None
         completed_at = time.time()

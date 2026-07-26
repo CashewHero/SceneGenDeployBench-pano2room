@@ -2,7 +2,7 @@ catalog_version: 1
 
 runners:
   - runner: pano2room
-    version: 0.1.1
+    version: 0.1.2
     latest: true
     display_name: Pano2Room
     kind: generator
@@ -22,7 +22,7 @@ runners:
     launcher:
       driver: docker
       compat_version: 1
-      image: ghcr.io/cashewhero/scenegendeploybench-pano2room:0.1.1
+      image: ghcr.io/cashewhero/scenegendeploybench-pano2room:0.1.2
       gpus: all
       endpoint:
         port: 58090
