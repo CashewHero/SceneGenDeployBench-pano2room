@@ -491,18 +491,18 @@ def _failure_result(
 def run_job(job_request: dict[str, Any]) -> dict[str, Any]:
     started_at = time.time()
     runtime = job_request["runtime"]
-    output_root = Path(runtime["output_dir"])
-    output_root.mkdir(parents=True, exist_ok=True)
+    workspace_root = Path(runtime["workspace_dir"])
+    workspace_root.mkdir(parents=True, exist_ok=True)
     variant = _variant_key(job_request)
-    log_path = output_root / f"runner-{variant}.log"
+    log_path = workspace_root / f"runner-{variant}.log"
     with tee_job_output(log_path):
-        return _run_job_logged(job_request, started_at, output_root, log_path, variant)
+        return _run_job_logged(job_request, started_at, workspace_root, log_path, variant)
 
 
 def _run_job_logged(
     job_request: dict[str, Any],
     started_at: float,
-    output_root: Path,
+    workspace_root: Path,
     log_path: Path,
     variant: str,
 ) -> dict[str, Any]:
@@ -535,21 +535,21 @@ def _run_job_logged(
             for sample_id, sample_data in samples.items()
             for data_type, value in sample_data.items()
         }
-        monitor = ResourceMonitor(sample_data=monitor_data, output_dir=output_root)
+        monitor = ResourceMonitor(sample_data=monitor_data, output_dir=workspace_root)
         monitor.start()
         logger.info(
             event_message(
                 "adapter_run_started",
                 job_id=job["job_id"],
                 batch_id=job.get("batch_id"),
-                output_dir=runtime["output_dir"],
+                workspace_dir=runtime["workspace_dir"],
                 input_roles=sorted(inputs),
             )
         )
 
-        run_dir = Path("/tmp") / str(job["job_id"]) / RUNNER_NAME
+        run_dir = workspace_root / "run"
         metrics_name = f"metrics-{variant}.json"
-        metrics_path = output_root / metrics_name
+        metrics_path = workspace_root / metrics_name
         print(f"pano2room job {job.get('job_id')} started", flush=True)
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -569,7 +569,7 @@ def _run_job_logged(
                 "pano2room_run_started",
                 job_id=job.get("job_id"),
                 image_path=str(image_path),
-                output_dir=str(output_root),
+                workspace_dir=str(workspace_root),
                 temp_dir=str(run_dir),
                 camera_trajectory_dir=camera_trajectory_dir,
                 timeout_seconds=job.get("timeout_seconds"),
@@ -588,7 +588,7 @@ def _run_job_logged(
             raise FileNotFoundError(f"Pano2Room did not produce {OUTPUT_FILENAME}: {source_ply}")
 
         output_name = f"3DGS-{variant}.ply"
-        output_ply = output_root / output_name
+        output_ply = workspace_root / output_name
         publish_file(source_ply, output_ply)
         resource_metrics = monitor.stop()
         monitor = None

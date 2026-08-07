@@ -60,9 +60,9 @@ For Pano2Room, full smoke also needs the three checkpoint files mounted with `RU
 
 ## Data Flow
 
-The orchestrator supplies the selected dataset data to a runner. An evaluator can also receive generated files and additional dataset viewpoints. Each runner writes its job folder and reports reusable outputs or metrics back to the orchestrator.
+The orchestrator supplies the selected dataset data to a runner. An evaluator can also receive generated files and additional dataset viewpoints. Each runner reports reusable outputs or metrics back to the orchestrator.
 
-The wire contract is defined in [Runner API](docs/api.md).
+The wire contract is defined in [Runner API](docs/api.md). Use the wrapper filesystem helpers to publish job files.
 
 ## Publish An Image
 
