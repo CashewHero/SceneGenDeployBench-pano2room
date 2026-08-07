@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from runner_wrapper.files import publish_file
+from runner_wrapper.files import publish_directory, publish_file
 from runner_wrapper.job_logging import tee_job_output
 from runner_wrapper.measurements import ResourceMonitor
 
@@ -28,6 +28,7 @@ RUNNER_NAME = "pano2room"
 OUTPUT_FILENAME = "3DGS.ply"
 DEFAULT_MODEL_CACHE_DIR = "/data/model_cache/pano2room"
 DEFAULT_CHECKPOINT_DIR = f"{DEFAULT_MODEL_CACHE_DIR}/checkpoints"
+DEFAULT_HF_MODEL = "stabilityai/stable-diffusion-2-inpainting"
 DEFAULT_CAMERA_TRAJECTORY_DIR = Path(__file__).resolve().parents[1] / "input" / "Camera_Trajectory"
 CAMERA_TRAJECTORY_DATA_KEYS = ("camera_trajectory", "camera_trajectory_dir")
 
@@ -129,8 +130,9 @@ def _config_string(config: dict[str, Any], key: str) -> str | None:
 
 
 def _configure_model_paths(config: dict[str, Any], model_cache_dir: str | None = None) -> None:
+    model_cache_root = Path(model_cache_dir or DEFAULT_MODEL_CACHE_DIR)
     checkpoint_dir_from_config = _config_string(config, "checkpoint_dir")
-    default_checkpoint_dir = str(Path(model_cache_dir or DEFAULT_MODEL_CACHE_DIR) / "checkpoints")
+    default_checkpoint_dir = str(model_cache_root / "checkpoints")
     checkpoint_dir = checkpoint_dir_from_config or os.getenv("PANO2ROOM_CHECKPOINT_DIR", default_checkpoint_dir)
     os.environ["PANO2ROOM_CHECKPOINT_DIR"] = checkpoint_dir
 
@@ -194,12 +196,13 @@ def _copy_lama_config_if_needed(target_path: Path) -> None:
         publish_file(source_path, target_path)
 
 
-def _download_with_gdown(url: str, output_path: Path) -> None:
+def _download_with_gdown(url: str, output_path: Path, workspace_dir: Path) -> None:
     with _exclusive_path_lock(output_path):
         if _usable_path(output_path):
             return
 
-        temp_path = output_path.with_name(f".{output_path.name}.{uuid.uuid4().hex}.part")
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = workspace_dir / f".{output_path.name}.{uuid.uuid4().hex}.part"
         try:
             try:
                 import gdown
@@ -215,12 +218,15 @@ def _download_with_gdown(url: str, output_path: Path) -> None:
 
             if not temp_path.is_file() or temp_path.stat().st_size <= 0:
                 raise RuntimeError(f"download produced no data for {output_path}")
-            os.replace(temp_path, output_path)
+            publish_file(temp_path, output_path)
         finally:
             temp_path.unlink(missing_ok=True)
 
 
-def _download_checkpoint_archive(output_paths: dict[str, Path]) -> None:
+def _download_checkpoint_archive(
+    output_paths: dict[str, Path],
+    workspace_dir: Path,
+) -> None:
     checkpoint_root = Path(os.environ["PANO2ROOM_CHECKPOINT_DIR"])
     archive_lock_target = checkpoint_root / "pano2room-pretrained-checkpoints"
     with _exclusive_path_lock(archive_lock_target):
@@ -232,10 +238,10 @@ def _download_checkpoint_archive(output_paths: dict[str, Path]) -> None:
         if not missing_paths:
             return
 
-        archive_path = checkpoint_root / f".pano2room-checkpoints.{uuid.uuid4().hex}.zip.part"
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        archive_path = workspace_dir / f".pano2room-checkpoints.{uuid.uuid4().hex}.zip.part"
         extracted_temp_paths: list[Path] = []
         try:
-            checkpoint_root.mkdir(parents=True, exist_ok=True)
             request = urllib.request.Request(
                 PANO2ROOM_WEIGHT_ARCHIVE_URL,
                 headers={"User-Agent": "SceneGenDeployBench-Pano2Room/0.1.2"},
@@ -264,14 +270,13 @@ def _download_checkpoint_archive(output_paths: dict[str, Path]) -> None:
                         raise RuntimeError(
                             f"official Pano2Room checkpoint archive is missing {expected_name}"
                         )
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    temp_path = output_path.with_name(f".{output_path.name}.{uuid.uuid4().hex}.part")
+                    temp_path = workspace_dir / f".{output_path.name}.{uuid.uuid4().hex}.part"
                     extracted_temp_paths.append(temp_path)
                     with archive.open(member) as source, temp_path.open("wb") as destination:
                         shutil.copyfileobj(source, destination, length=1024 * 1024)
                     if not _usable_path(temp_path):
                         raise RuntimeError(f"checkpoint extraction produced no data for {output_path}")
-                    os.replace(temp_path, output_path)
+                    publish_file(temp_path, output_path)
                     print(f"Installed Pano2Room checkpoint: {output_path}", flush=True)
         finally:
             archive_path.unlink(missing_ok=True)
@@ -279,7 +284,7 @@ def _download_checkpoint_archive(output_paths: dict[str, Path]) -> None:
                 temp_path.unlink(missing_ok=True)
 
 
-def _ensure_pano2room_weights() -> None:
+def _ensure_pano2room_weights(workspace_dir: Path) -> None:
     _copy_lama_config_if_needed(Path(os.environ["PANO2ROOM_CHECKPOINT_LAMA_CONFIG"]))
 
     missing_downloads = [
@@ -301,7 +306,11 @@ def _ensure_pano2room_weights() -> None:
         for env_key in missing_downloads:
             output_path = output_paths[env_key]
             logger.info(event_message("pano2room_weight_download_started", env_key=env_key, output_path=str(output_path)))
-            _download_with_gdown(PANO2ROOM_WEIGHT_DOWNLOADS[env_key], output_path)
+            _download_with_gdown(
+                PANO2ROOM_WEIGHT_DOWNLOADS[env_key],
+                output_path,
+                workspace_dir,
+            )
             logger.info(
                 event_message(
                     "pano2room_weight_download_finished",
@@ -319,7 +328,7 @@ def _ensure_pano2room_weights() -> None:
             )
         )
         try:
-            _download_checkpoint_archive(output_paths)
+            _download_checkpoint_archive(output_paths, workspace_dir)
         except Exception as archive_error:
             raise RuntimeError(
                 "Pano2Room checkpoint auto-download failed from both Google Drive "
@@ -333,12 +342,47 @@ def _write_metrics_file(metrics_path: Path, summary: dict[str, Any]) -> None:
         handle.write("\n")
 
 
-def _validate_local_paths(paths: list[Path]) -> None:
-    _ensure_pano2room_weights()
+def _validate_local_paths(paths: list[Path], workspace_dir: Path) -> None:
+    _ensure_pano2room_weights(workspace_dir)
     missing = [str(path) for path in paths if not _usable_path(path)]
     if missing:
         hint = " Set PANO2ROOM_AUTO_DOWNLOAD_WEIGHTS=1 to download Pano2Room checkpoints, or mount/configure the weight paths."
         raise FileNotFoundError("missing Pano2Room weight path(s): " + ", ".join(missing) + hint)
+
+
+def _prepare_huggingface_cache(
+    workspace_dir: Path,
+    model_cache_dir: Path,
+) -> tuple[Path, Path, Path] | None:
+    model = os.getenv("PANO2ROOM_HF_STABLE_DIFFUSION_MODEL", DEFAULT_HF_MODEL).strip()
+    if model and Path(model).is_absolute():
+        os.environ["HF_HOME"] = str(workspace_dir / "huggingface")
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        return None
+
+    shared_cache = model_cache_dir / "huggingface"
+    marker_name = hashlib.sha256(model.encode("utf-8")).hexdigest()[:16]
+    ready_marker = shared_cache / f".ready-{marker_name}"
+    if ready_marker.is_file():
+        os.environ["HF_HOME"] = str(shared_cache)
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        return None
+
+    local_cache = workspace_dir / "huggingface"
+    local_cache.mkdir(parents=True, exist_ok=True)
+    os.environ["HF_HOME"] = str(local_cache)
+    os.environ.pop("HF_HUB_OFFLINE", None)
+    return local_cache, shared_cache, ready_marker
+
+
+def _publish_huggingface_cache(cache_paths: tuple[Path, Path, Path] | None) -> None:
+    if cache_paths is None:
+        return
+    local_cache, shared_cache, ready_marker = cache_paths
+    publish_directory(local_cache, shared_cache, dirs_exist_ok=True)
+    local_marker = local_cache.parent / ready_marker.name
+    local_marker.write_text("ready\n", encoding="utf-8")
+    publish_file(local_marker, ready_marker)
 
 
 def _load_trajectory_file(path: Path) -> dict[str, Any]:
@@ -553,9 +597,11 @@ def _run_job_logged(
         print(f"pano2room job {job.get('job_id')} started", flush=True)
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        model_cache_dir = str(Path(os.getenv("PATH_MODEL_CACHE", "/data/model_cache")) / RUNNER_NAME)
-        _configure_model_paths(parameters, model_cache_dir)
-        _validate_local_paths(_required_local_paths())
+        model_cache_dir = Path(os.getenv("PATH_MODEL_CACHE", "/data/model_cache")) / RUNNER_NAME
+        cache_workspace = workspace_root / "model-cache"
+        _configure_model_paths(parameters, str(model_cache_dir))
+        _validate_local_paths(_required_local_paths(), cache_workspace / "checkpoints")
+        huggingface_cache = _prepare_huggingface_cache(cache_workspace, model_cache_dir)
         camera_trajectory_dir = str(_resolve_camera_trajectory_dir(sample_data, run_dir))
 
         import torch
@@ -582,6 +628,7 @@ def _run_job_logged(
             camera_trajectory_dir=camera_trajectory_dir,
             render_outputs=False,
         )
+        _publish_huggingface_cache(huggingface_cache)
         produced_path = pipeline.run()
         source_ply = Path(produced_path) if produced_path else run_dir / OUTPUT_FILENAME
         if not source_ply.is_file():
@@ -589,7 +636,7 @@ def _run_job_logged(
 
         output_name = f"3DGS-{variant}.ply"
         output_ply = workspace_root / output_name
-        publish_file(source_ply, output_ply)
+        source_ply.replace(output_ply)
         resource_metrics = monitor.stop()
         monitor = None
         completed_at = time.time()
