@@ -18,6 +18,8 @@ from runner_wrapper.adapter import (
     _configure_model_paths,
     _download_checkpoint_archive,
     _download_with_gdown,
+    _prepare_huggingface_cache,
+    _publish_huggingface_cache,
 )
 
 
@@ -32,6 +34,10 @@ class AdapterCacheTests(unittest.TestCase):
             self.assertEqual(
                 os.environ["PANO2ROOM_CHECKPOINT_LAMA_CKPT"],
                 "/data/model_cache/custom/checkpoints/big-lama.ckpt",
+            )
+            self.assertEqual(
+                os.environ.get("HF_HOME"),
+                None,
             )
 
     def test_concurrent_download_is_published_once(self) -> None:
@@ -54,7 +60,11 @@ class AdapterCacheTests(unittest.TestCase):
 
             def worker() -> None:
                 try:
-                    _download_with_gdown("https://example.invalid/weights", output_path)
+                    _download_with_gdown(
+                        "https://example.invalid/weights",
+                        output_path,
+                        Path(temp_dir) / "workspace",
+                    )
                 except Exception as exc:  # pragma: no cover - assertion reports details
                     errors.append(exc)
 
@@ -80,7 +90,11 @@ class AdapterCacheTests(unittest.TestCase):
 
             with patch.dict(sys.modules, {"gdown": SimpleNamespace(download=download)}):
                 with self.assertRaisesRegex(RuntimeError, "produced no data"):
-                    _download_with_gdown("https://example.invalid/weights", output_path)
+                    _download_with_gdown(
+                        "https://example.invalid/weights",
+                        output_path,
+                        Path(temp_dir) / "workspace",
+                    )
 
             self.assertFalse(output_path.exists())
             self.assertFalse(any(path.name.endswith(".part") for path in output_path.parent.iterdir()))
@@ -108,11 +122,40 @@ class AdapterCacheTests(unittest.TestCase):
                 patch.dict(os.environ, {"PANO2ROOM_CHECKPOINT_DIR": str(checkpoint_dir)}),
                 patch("runner_wrapper.adapter.urllib.request.urlopen", return_value=FakeResponse(archive_bytes.getvalue())),
             ):
-                _download_checkpoint_archive(output_paths)
+                _download_checkpoint_archive(
+                    output_paths,
+                    Path(temp_dir) / "workspace",
+                )
 
             for env_key, output_path in output_paths.items():
                 self.assertEqual(output_path.read_bytes(), env_key.encode())
             self.assertFalse(any(path.name.endswith(".part") for path in checkpoint_dir.iterdir()))
+
+    def test_huggingface_cache_is_prepared_locally_then_published(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"PANO2ROOM_HF_STABLE_DIFFUSION_MODEL": "example/model"},
+            clear=True,
+        ):
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            shared = root / "shared"
+            cache_paths = _prepare_huggingface_cache(workspace, shared)
+            self.assertIsNotNone(cache_paths)
+            self.assertEqual(os.environ["HF_HOME"], str(workspace / "huggingface"))
+
+            local_cache = workspace / "huggingface"
+            (local_cache / "models--example--model").mkdir(parents=True)
+            (local_cache / "models--example--model" / "weights.bin").write_bytes(b"weights")
+            _publish_huggingface_cache(cache_paths)
+
+            self.assertEqual(
+                (shared / "huggingface" / "models--example--model" / "weights.bin").read_bytes(),
+                b"weights",
+            )
+            self.assertIsNone(_prepare_huggingface_cache(workspace, shared))
+            self.assertEqual(os.environ["HF_HOME"], str(shared / "huggingface"))
+            self.assertEqual(os.environ["HF_HUB_OFFLINE"], "1")
 
 
 if __name__ == "__main__":
