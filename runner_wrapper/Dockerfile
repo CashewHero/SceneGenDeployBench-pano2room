@@ -3,7 +3,7 @@ FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-devel AS builder
 WORKDIR /app/model_repo
 
 # Build from the repository root:
-# docker build -f runner_wrapper/Dockerfile -t scenegendeploybench-pano2room:0.1.3 .
+# docker build -f runner_wrapper/Dockerfile -t scenegendeploybench-pano2room:0.1.4 .
 COPY requirements.txt requirements_git.txt /app/model_repo/
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -63,7 +63,7 @@ ENV PYTHONUNBUFFERED=1
 ENV RUNNER_PORT=58090
 ENV RUNNER_NAME=pano2room
 ENV RUNNER_TYPE=generator
-ENV RUNNER_VERSION=0.1.3
+ENV RUNNER_VERSION=0.1.4
 ENV RUNNER_CONTRACT_VERSION=1
 ENV RUNNER_IDLE_TIMEOUT_SECONDS=900
 ENV RUNNER_ADAPTER=runner_wrapper.adapter:run_job

@@ -26,6 +26,10 @@ logger = logging.getLogger("runner_wrapper.adapter")
 
 RUNNER_NAME = "pano2room"
 OUTPUT_FILENAME = "3DGS.ply"
+OUTPUT_METADATA = {
+    "scene_scale": 0.21,
+    "scene_coordinate_system": "FUR",
+}
 DEFAULT_MODEL_CACHE_DIR = "/data/model_cache/pano2room"
 DEFAULT_CHECKPOINT_DIR = f"{DEFAULT_MODEL_CACHE_DIR}/checkpoints"
 DEFAULT_HF_MODEL = "stabilityai/stable-diffusion-2-inpainting"
@@ -244,7 +248,7 @@ def _download_checkpoint_archive(
         try:
             request = urllib.request.Request(
                 PANO2ROOM_WEIGHT_ARCHIVE_URL,
-                headers={"User-Agent": "SceneGenDeployBench-Pano2Room/0.1.3"},
+                headers={"User-Agent": "SceneGenDeployBench-Pano2Room/0.1.4"},
             )
             print(
                 "Google Drive checkpoint download failed; downloading official "
@@ -642,10 +646,12 @@ def _run_job_logged(
         completed_at = time.time()
         wall_time_ms = round((completed_at - started_at) * 1000, 3)
         output_files = {primary_sample: {"3dgs": output_name}}
+        output_metadata = dict(OUTPUT_METADATA)
         print(f"pano2room job {job.get('job_id')} completed in {wall_time_ms} ms", flush=True)
         report: dict[str, Any] = {
             "inputs": inputs,
             "output_files": output_files,
+            "output_metadata": output_metadata,
         }
         if parameters:
             report["parameters"] = dict(parameters)
@@ -679,6 +685,7 @@ def _run_job_logged(
             ],
             "failure": None,
             "output_files": output_files,
+            "output_metadata": output_metadata,
         }
         return result
     except Exception as exc:

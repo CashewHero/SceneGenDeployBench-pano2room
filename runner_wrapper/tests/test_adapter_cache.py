@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from runner_wrapper.adapter import (
     CHECKPOINT_DEFAULTS,
+    OUTPUT_METADATA,
     PANO2ROOM_WEIGHT_DOWNLOADS,
     _configure_model_paths,
     _download_checkpoint_archive,
@@ -24,6 +25,12 @@ from runner_wrapper.adapter import (
 
 
 class AdapterCacheTests(unittest.TestCase):
+    def test_output_metadata_describes_native_scene_coordinates(self) -> None:
+        self.assertEqual(
+            OUTPUT_METADATA,
+            {"scene_scale": 0.21, "scene_coordinate_system": "FUR"},
+        )
+
     def test_runtime_cache_dir_sets_checkpoint_defaults(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             _configure_model_paths({}, "/data/model_cache/custom")
